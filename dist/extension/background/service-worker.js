@@ -1,7 +1,7 @@
 /**
  * Background service worker initialization.
  */
-import { getFollowedUPs, getUPVideos, getVideoTags } from "../api/bili-api.js";
+import { getFollowedUPs, getUPInfo, getUPVideos, getVideoTags } from "../api/bili-api.js";
 import { classifyUP } from "../engine/classifier.js";
 import { randomUP, randomVideo, recommendUP, recommendVideo, updateInterestFromWatch } from "../engine/recommender.js";
 import { getValue, saveUPList, setValue } from "../storage/storage.js";
@@ -50,13 +50,25 @@ export async function classifyUpTask(options = {}) {
     }
     const upTags = (await getValueFn("upTags")) ?? {};
     const videoCounts = (await getValueFn("videoCounts")) ?? {};
-    const batch = list.slice(0, batchSize);
+    const batch = list;
     let processed = 0;
-    for (const up of batch) {
-        const profile = await classifyUPFn(up.mid);
-        upTags[String(up.mid)] = profile.tags;
-        videoCounts[String(up.mid)] = profile.videoCount ?? 0;
-        processed += 1;
+    for (let i = 0; i < batch.length; i += batchSize) {
+        const chunk = batch.slice(i, i + batchSize);
+        for (const up of chunk) {
+            const existing = upTags[String(up.mid)] ?? [];
+            console.log("[Background] Classify UP", up.mid, {
+                existingTags: existing.length
+            });
+            const profile = await classifyUPFn(up.mid, {
+                existingTags: existing,
+                getUPVideosFn: (mid) => getUPVideos(mid, { fallbackRequest: proxyApiRequest }),
+                getUPInfoFn: (mid) => getUPInfo(mid, { fallbackRequest: proxyApiRequest }),
+                getVideoTagsFn: (bvid) => getVideoTags(bvid, { fallbackRequest: proxyApiRequest })
+            });
+            upTags[String(up.mid)] = profile.tags;
+            videoCounts[String(up.mid)] = profile.videoCount ?? 0;
+            processed += 1;
+        }
     }
     await setValueFn("upTags", upTags);
     await setValueFn("videoCounts", videoCounts);
@@ -166,6 +178,19 @@ export async function handleMessage(message, options = {}) {
         console.log("[Background] Cleared classify data");
         return null;
     }
+    if (message.type === "probe_up") {
+        const payload = message.payload;
+        const mid = payload?.mid;
+        if (!mid)
+            return { ok: false };
+        const info = await getUPInfo(mid, { fallbackRequest: proxyApiRequest });
+        const videos = await getUPVideos(mid, { fallbackRequest: proxyApiRequest });
+        return {
+            ok: Boolean(info),
+            name: info?.name ?? null,
+            videoCount: Array.isArray(videos) ? videos.length : 0
+        };
+    }
     if (message.type === "recommend_video") {
         const up = await recommendUPFn();
         if (!up)
@@ -201,4 +226,31 @@ export function initBackground() {
 }
 if (typeof chrome !== "undefined") {
     initBackground();
+}
+async function proxyApiRequest(url) {
+    if (typeof chrome === "undefined" || !chrome.tabs?.query || !chrome.tabs?.sendMessage) {
+        return null;
+    }
+    const tabs = await chrome.tabs.query({ url: "*://*.bilibili.com/*" });
+    const candidates = tabs.filter((tab) => typeof tab.id === "number");
+    if (candidates.length === 0) {
+        console.warn("[Background] No Bilibili tab for proxy");
+        return null;
+    }
+    for (const tab of candidates) {
+        try {
+            const response = (await chrome.tabs.sendMessage(tab.id, {
+                type: "bili_api_request",
+                url
+            }));
+            if (response && response.data !== undefined) {
+                return response.data ?? null;
+            }
+        }
+        catch (error) {
+            console.warn("[Background] Proxy send failed", error);
+        }
+    }
+    console.warn("[Background] No proxy response");
+    return null;
 }

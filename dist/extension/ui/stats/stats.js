@@ -23,7 +23,7 @@ export function colorFromTag(tag) {
         hash = (hash * 31 + tag.charCodeAt(i)) % 360;
     }
     const hue = Math.abs(hash) % 360;
-    const sat = 10 + (Math.abs(hash * 7) % 21);
+    const sat = 70 + (Math.abs(hash * 7) % 21);
     const light = 70 + (Math.abs(hash * 13) % 11);
     return `hsl(${hue} ${sat}% ${light}%)`;
 }
@@ -142,6 +142,30 @@ export async function initStats() {
             return;
         chrome.runtime.sendMessage({ type: "clear_classify_data" }, () => {
             window.location.reload();
+        });
+    });
+    const probeBtn = document.getElementById("btn-probe-up");
+    const probeInput = document.getElementById("probe-mid");
+    const probeResult = document.getElementById("probe-result");
+    probeBtn?.addEventListener("click", () => {
+        if (typeof chrome === "undefined")
+            return;
+        const mid = Number(probeInput?.value ?? 0);
+        if (!mid || Number.isNaN(mid)) {
+            if (probeResult)
+                probeResult.textContent = "请输入有效 mid";
+            return;
+        }
+        chrome.runtime.sendMessage({ type: "probe_up", payload: { mid } }, (response) => {
+            const result = response;
+            if (!probeResult)
+                return;
+            if (!result || !result.ok) {
+                probeResult.textContent =
+                    "获取失败，请确认已打开任意 B 站页面并保持登录";
+                return;
+            }
+            probeResult.textContent = `UP: ${result.name ?? "-"} | videos: ${result.videoCount ?? 0}`;
         });
     });
     const upCache = (await getValue("upList")) ?? { upList: [] };

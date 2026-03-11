@@ -113,7 +113,7 @@ h2 {
   align-items: center;
   padding: 2px 8px;
   border-radius: 999px;
-  color: #ffffff;
+  color: #1f2430;
   font-size: 11px;
   line-height: 1.4;
   white-space: nowrap;
@@ -131,6 +131,43 @@ h2 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 12px;
+}
+
+.danger {
+  margin-top: 8px;
+  align-self: flex-start;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 6px;
+  background: #f56565;
+  color: #fff;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.probe {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.probe input {
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid #cbd3e1;
+  font-size: 12px;
+  flex: 1;
+}
+
+.probe button {
+  padding: 6px 10px;
+  border: none;
+  border-radius: 6px;
+  background: #2b6cff;
+  color: #fff;
+  cursor: pointer;
+  font-size: 12px;
 }
 
 @media (max-width: 860px) {

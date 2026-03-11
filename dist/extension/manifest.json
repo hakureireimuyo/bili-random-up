@@ -28,7 +28,7 @@
     },
     {
       "matches": [
-        "https://www.bilibili.com/*"
+        "https://*.bilibili.com/*"
       ],
       "js": [
         "content/uid.js"

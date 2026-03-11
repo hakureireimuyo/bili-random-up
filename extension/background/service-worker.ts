@@ -2,7 +2,7 @@
  * Background service worker initialization.
  */
 
-import { getFollowedUPs, getUPVideos, getVideoTags } from "../api/bili-api.js";
+import { getFollowedUPs, getUPInfo, getUPVideos, getVideoTags } from "../api/bili-api.js";
 import { classifyUP } from "../engine/classifier.js";
 import {
   randomUP,
@@ -32,6 +32,8 @@ export interface MessageLike {
 
 export interface TabsManager {
   update: (updateProperties: { url: string }) => void;
+  query?: (queryInfo: { url: string }) => Promise<{ id?: number }[]>;
+  sendMessage?: (tabId: number, message: unknown) => Promise<unknown>;
 }
 
 export interface RuntimeManager {
@@ -54,6 +56,7 @@ interface BackgroundOptions {
   classifyUPFn?: typeof classifyUP;
   getUPVideosFn?: typeof getUPVideos;
   getVideoTagsFn?: typeof getVideoTags;
+  getUPInfoFn?: typeof getUPInfo;
   recommendUPFn?: typeof recommendUP;
   recommendVideoFn?: typeof recommendVideo;
   updateInterestFromWatchFn?: typeof updateInterestFromWatch;
@@ -128,14 +131,29 @@ export async function classifyUpTask(
     ((await getValueFn("upTags")) as Record<string, string[]> | null) ?? {};
   const videoCounts =
     ((await getValueFn("videoCounts")) as Record<string, number> | null) ?? {};
-  const batch = list.slice(0, batchSize);
+  const batch = list;
   let processed = 0;
 
-  for (const up of batch) {
-    const profile = await classifyUPFn(up.mid);
-    upTags[String(up.mid)] = profile.tags;
-    videoCounts[String(up.mid)] = profile.videoCount ?? 0;
-    processed += 1;
+  for (let i = 0; i < batch.length; i += batchSize) {
+    const chunk = batch.slice(i, i + batchSize);
+    for (const up of chunk) {
+      const existing = upTags[String(up.mid)] ?? [];
+      console.log("[Background] Classify UP", up.mid, {
+        existingTags: existing.length
+      });
+      const profile = await classifyUPFn(up.mid, {
+        existingTags: existing,
+        getUPVideosFn: (mid: number) =>
+          getUPVideos(mid, { fallbackRequest: proxyApiRequest }),
+        getUPInfoFn: (mid: number) =>
+          getUPInfo(mid, { fallbackRequest: proxyApiRequest }),
+        getVideoTagsFn: (bvid: string) =>
+          getVideoTags(bvid, { fallbackRequest: proxyApiRequest })
+      });
+      upTags[String(up.mid)] = profile.tags;
+      videoCounts[String(up.mid)] = profile.videoCount ?? 0;
+      processed += 1;
+    }
   }
 
   await setValueFn("upTags", upTags);
@@ -272,6 +290,19 @@ export async function handleMessage(
     return null;
   }
 
+  if (message.type === "probe_up") {
+    const payload = message.payload as { mid?: number };
+    const mid = payload?.mid;
+    if (!mid) return { ok: false };
+    const info = await getUPInfo(mid, { fallbackRequest: proxyApiRequest });
+    const videos = await getUPVideos(mid, { fallbackRequest: proxyApiRequest });
+    return {
+      ok: Boolean(info),
+      name: info?.name ?? null,
+      videoCount: Array.isArray(videos) ? videos.length : 0
+    };
+  }
+
   if (message.type === "recommend_video") {
     const up = await recommendUPFn();
     if (!up) return null;
@@ -309,4 +340,30 @@ export function initBackground(): void {
 
 if (typeof chrome !== "undefined") {
   initBackground();
+}
+async function proxyApiRequest(url: string): Promise<unknown | null> {
+  if (typeof chrome === "undefined" || !chrome.tabs?.query || !chrome.tabs?.sendMessage) {
+    return null;
+  }
+  const tabs = await chrome.tabs.query({ url: "*://*.bilibili.com/*" });
+  const candidates = tabs.filter((tab) => typeof tab.id === "number") as { id: number }[];
+  if (candidates.length === 0) {
+    console.warn("[Background] No Bilibili tab for proxy");
+    return null;
+  }
+  for (const tab of candidates) {
+    try {
+      const response = (await chrome.tabs.sendMessage(tab.id, {
+        type: "bili_api_request",
+        url
+      })) as { data?: unknown } | undefined;
+      if (response && response.data !== undefined) {
+        return response.data ?? null;
+      }
+    } catch (error) {
+      console.warn("[Background] Proxy send failed", error);
+    }
+  }
+  console.warn("[Background] No proxy response");
+  return null;
 }

@@ -54,6 +54,18 @@ function initUidDetector(): void {
   injectPageProbe();
 }
 
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  const payload = message as { type?: string; url?: string };
+  if (!payload || payload.type !== "bili_api_request" || !payload.url) {
+    return;
+  }
+  fetch(payload.url, { credentials: "include" })
+    .then((res) => res.json())
+    .then((data) => sendResponse({ data }))
+    .catch(() => sendResponse({ data: null }));
+  return true;
+});
+
 if (typeof window !== "undefined") {
   initUidDetector();
 }

@@ -52,6 +52,9 @@ test("updateUpListTask reads uid from settings", async () => {
 test("classifyUpTask stores tags", async () => {
   const stored: Record<string, unknown> = {};
   const count = await classifyUpTask({
+    getUPVideosFn: async () => [],
+    getUPInfoFn: async () => ({ mid: 1, name: "A", sign: "", face: "" }),
+    getVideoTagsFn: async () => [],
     getValueFn: async (key: string) => {
       if (key === "upList") {
         return { upList: [{ mid: 1 }, { mid: 2 }] };
@@ -67,7 +70,7 @@ test("classifyUpTask stores tags", async () => {
     classifyUPFn: async (mid: number) => ({ mid, tags: ["AI"], confidence: 0.5, videoCount: 2 }),
     batchSize: 1
   });
-  assert(count === 1, "expected one classified");
+  assert(count === 2, "expected two classified");
   const upTags = stored["upTags"] as Record<string, string[]>;
   assert(upTags["1"][0] === "AI", "expected AI tag");
   const videoCounts = stored["videoCounts"] as Record<string, number>;
@@ -232,4 +235,16 @@ test("handleMessage clear_classify_data resets data", async () => {
   );
   assert(Object.keys(stored).length === 3, "expected three keys cleared");
   assert(JSON.stringify(stored["upTags"]) === "{}", "expected empty upTags");
+});
+
+test("handleMessage probe_up returns info", async () => {
+  const result = await handleMessage(
+    { type: "probe_up", payload: { mid: 1 } },
+    {
+      tabs: {
+        update: () => {}
+      }
+    }
+  );
+  assert(result !== null, "expected result");
 });

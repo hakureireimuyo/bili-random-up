@@ -26,12 +26,24 @@ export async function rateLimiter(minIntervalMs = DEFAULT_MIN_INTERVAL_MS) {
  */
 export async function apiRequest(url, options = {}) {
     const fetchFn = options.fetchFn || fetch;
+    const fetchInit = {
+        credentials: "include",
+        mode: "cors",
+        headers: {
+            Accept: "application/json, text/plain, */*"
+        },
+        ...(options.fetchInit ?? {})
+    };
     try {
         await rateLimiter();
         console.log("[API] Request", url);
-        const response = await fetchFn(url);
+        const response = await fetchFn(url, fetchInit);
         if (!response.ok) {
             console.error("[API] Request failed", response.status, url);
+            if (response.status === 412 && options.fallbackRequest) {
+                const fallback = await options.fallbackRequest(url);
+                return fallback ?? null;
+            }
             return null;
         }
         const data = (await response.json());

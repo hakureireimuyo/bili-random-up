@@ -50,24 +50,33 @@ export async function collectVideoTags(videos, options = {}) {
 /**
  * LLM classification entry (placeholder).
  */
-export async function classifyWithLLM(upProfile, videos) {
+export async function classifyWithLLM(upProfile, videos, existingTags = []) {
     const titles = videos.map((video) => video.title).slice(0, 10);
+    const existing = existingTags.length > 0 ? existingTags.join("、") : "无";
     const prompt = [
         "You are a content classifier.",
         "Return a JSON array of 3 to 5 short Chinese tags.",
+        "Prefer existing tags when appropriate and avoid near-duplicate synonyms.",
         `UP: ${upProfile.name}`,
         `Bio: ${upProfile.sign}`,
+        `Existing tags: ${existing}`,
         `Video titles: ${titles.join(" | ")}`
     ].join("\n");
-    console.log("[Classifier] LLM classification", upProfile.mid, videos.length);
+    console.log("[Classifier] LLM classification", upProfile.mid, {
+        existingTags: existingTags.length,
+        titleSamples: titles.length
+    });
     const content = await chatComplete([
         { role: "system", content: "Classify Bilibili UP content into tags." },
         { role: "user", content: prompt }
     ]);
     if (!content) {
+        console.log("[Classifier] LLM empty response", upProfile.mid);
         return [];
     }
-    return parseTagsFromContent(content);
+    const tags = parseTagsFromContent(content);
+    console.log("[Classifier] LLM tags", upProfile.mid, tags);
+    return tags;
 }
 /**
  * Merge tag stats with LLM tags.
@@ -93,14 +102,24 @@ export async function classifyUP(mid, options = {}) {
     const getUPVideosFn = options.getUPVideosFn ?? ((value) => getUPVideos(value));
     const getUPInfoFn = options.getUPInfoFn ?? ((value) => getUPInfo(value));
     const classifyWithLLMFn = options.classifyWithLLMFn ?? classifyWithLLM;
+    const existingTags = options.existingTags ?? [];
     console.log("[Classifier] Classify UP", mid);
     const videos = await getUPVideosFn(mid);
     const videoCount = videos.length;
     const sampled = sampleVideos(videos, 5);
     const collectedTags = await collectVideoTags(sampled, options);
     const tagStats = extractTopTags([{ bvid: "tags", title: "tags", tags: collectedTags }], 5);
+    console.log("[Classifier] Tag stats", mid, tagStats);
     const upProfile = await getUPInfoFn(mid);
-    const llmTags = upProfile ? await classifyWithLLMFn(upProfile, sampled) : [];
+    if (!upProfile) {
+        console.log("[Classifier] Missing UP profile", mid);
+    }
+    if (existingTags.length > 0) {
+        console.log("[Classifier] Skip LLM (existing tags)", mid, existingTags);
+    }
+    const llmTags = upProfile && existingTags.length === 0
+        ? await classifyWithLLMFn(upProfile, sampled, existingTags)
+        : [];
     const tags = limitTags(mergeTags(tagStats, llmTags), 5);
     let confidence = 0.3;
     if (tagStats.length > 0 && llmTags.length > 0) {

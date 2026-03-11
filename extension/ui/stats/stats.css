@@ -145,6 +145,31 @@ h2 {
   font-size: 12px;
 }
 
+.probe {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.probe input {
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid #cbd3e1;
+  font-size: 12px;
+  flex: 1;
+}
+
+.probe button {
+  padding: 6px 10px;
+  border: none;
+  border-radius: 6px;
+  background: #2b6cff;
+  color: #fff;
+  cursor: pointer;
+  font-size: 12px;
+}
+
 @media (max-width: 860px) {
   .layout {
     grid-template-columns: 1fr;

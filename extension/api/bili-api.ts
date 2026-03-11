@@ -34,6 +34,8 @@ export interface UPProfile {
 
 interface ApiRequestOptions {
   fetchFn?: FetchFn;
+  fetchInit?: RequestInit;
+  fallbackRequest?: (url: string) => Promise<unknown | null>;
 }
 
 const DEFAULT_MIN_INTERVAL_MS = 200;
@@ -69,12 +71,24 @@ export async function apiRequest<T>(
   options: ApiRequestOptions = {}
 ): Promise<T | null> {
   const fetchFn = options.fetchFn || (fetch as unknown as FetchFn);
+  const fetchInit: RequestInit = {
+    credentials: "include",
+    mode: "cors",
+    headers: {
+      Accept: "application/json, text/plain, */*"
+    },
+    ...(options.fetchInit ?? {})
+  };
   try {
     await rateLimiter();
     console.log("[API] Request", url);
-    const response = await fetchFn(url);
+    const response = await fetchFn(url, fetchInit);
     if (!response.ok) {
       console.error("[API] Request failed", response.status, url);
+      if (response.status === 412 && options.fallbackRequest) {
+        const fallback = await options.fallbackRequest(url);
+        return (fallback as T | null) ?? null;
+      }
       return null;
     }
     const data = (await response.json()) as T;
