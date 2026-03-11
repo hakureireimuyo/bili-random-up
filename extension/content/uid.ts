@@ -9,16 +9,49 @@ function extractUidFromWindow(
   return typeof mid === "number" && mid > 0 ? mid : null;
 }
 
+function postUid(uid: number): void {
+  chrome.runtime.sendMessage({ type: "detect_uid", payload: { uid } });
+}
+
+function injectPageProbe(): void {
+  const script = document.createElement("script");
+  script.textContent = [
+    "(function(){",
+    "try{",
+    "var uid=window.__INITIAL_STATE__&&window.__INITIAL_STATE__.user&&window.__INITIAL_STATE__.user.mid;",
+    "if(typeof uid==='number'&&uid>0){",
+    "window.postMessage({source:'bde',type:'uid_detected',uid:uid},'*');",
+    "}",
+    "}catch(e){}",
+    "})();"
+  ].join("");
+  (document.documentElement || document.head || document.body).appendChild(script);
+  script.remove();
+}
+
 function initUidDetector(): void {
   if (typeof window === "undefined") {
     return;
   }
-  const uid = extractUidFromWindow(window);
-  if (!uid) {
+  const directUid = extractUidFromWindow(window);
+  if (directUid) {
+    console.log("[UID] Detected user (direct)", directUid);
+    postUid(directUid);
     return;
   }
-  console.log("[UID] Detected user", uid);
-  chrome.runtime.sendMessage({ type: "detect_uid", payload: { uid } });
+
+  window.addEventListener("message", (event) => {
+    if (event.source !== window) {
+      return;
+    }
+    const data = event.data as { source?: string; type?: string; uid?: number };
+    if (data?.source === "bde" && data?.type === "uid_detected" && data.uid) {
+      console.log("[UID] Detected user (injected)", data.uid);
+      postUid(data.uid);
+    }
+  });
+
+  injectPageProbe();
 }
 
 if (typeof window !== "undefined") {

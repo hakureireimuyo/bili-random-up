@@ -19,3 +19,12 @@ manifestJson.content_scripts = manifestJson.content_scripts.map((script) => ({
 }));
 
 writeFileSync(join(distExtension, "manifest.json"), JSON.stringify(manifestJson, null, 2));
+
+const popupHtmlPath = join(distExtension, "ui", "popup", "popup.html");
+const optionsHtmlPath = join(distExtension, "ui", "options", "options.html");
+
+const popupHtml = readFileSync(popupHtmlPath, "utf-8").replace(/\.ts"/g, ".js\"");
+writeFileSync(popupHtmlPath, popupHtml);
+
+const optionsHtml = readFileSync(optionsHtmlPath, "utf-8").replace(/\.ts"/g, ".js\"");
+writeFileSync(optionsHtmlPath, optionsHtml);

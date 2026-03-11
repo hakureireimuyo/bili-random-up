@@ -22,7 +22,8 @@ export async function updateUpListTask(options = {}) {
     const getFollowedUPsFn = options.getFollowedUPsFn ?? getFollowedUPs;
     const saveUPListFn = options.saveUPListFn ?? saveUPList;
     const getValueFn = options.getValueFn ?? ((key) => getValue(key));
-    const uid = options.uid ?? (await getValueFn("userId"));
+    const settings = (await getValueFn("settings"));
+    const uid = options.uid ?? (await getValueFn("userId")) ?? settings?.userId;
     const uidValue = typeof uid === "number" ? uid : Number(uid);
     if (!uidValue || Number.isNaN(uidValue)) {
         console.warn("[Background] Missing userId for update");

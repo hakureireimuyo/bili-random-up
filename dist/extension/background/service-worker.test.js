@@ -15,6 +15,19 @@ test("updateUpListTask uses uid and saves list", async () => {
     let saved = 0;
     const ok = await updateUpListTask({
         uid: 1,
+        getValueFn: async () => null,
+        getFollowedUPsFn: async () => [{ mid: 1, name: "UP", face: "", sign: "", follow_time: 1 }],
+        saveUPListFn: async () => {
+            saved += 1;
+        }
+    });
+    assert(ok, "expected ok");
+    assert(saved === 1, "expected save once");
+});
+test("updateUpListTask reads uid from settings", async () => {
+    let saved = 0;
+    const ok = await updateUpListTask({
+        getValueFn: async (key) => key === "settings" ? { userId: 9 } : null,
         getFollowedUPsFn: async () => [{ mid: 1, name: "UP", face: "", sign: "", follow_time: 1 }],
         saveUPListFn: async () => {
             saved += 1;
@@ -50,6 +63,7 @@ test("handleAlarm routes to update and classify", async () => {
     let classified = 0;
     await handleAlarm({ name: ALARM_UPDATE_UP_LIST }, {
         uid: 1,
+        getValueFn: async () => null,
         getFollowedUPsFn: async () => [],
         saveUPListFn: async () => {
             updated += 1;
@@ -131,6 +145,7 @@ test("handleMessage update_up_list triggers update", async () => {
     let updated = 0;
     await handleMessage({ type: "update_up_list" }, {
         uid: 1,
+        getValueFn: async () => null,
         getFollowedUPsFn: async () => [],
         saveUPListFn: async () => {
             updated += 1;

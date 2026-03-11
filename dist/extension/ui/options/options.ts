@@ -70,6 +70,9 @@ async function loadSettings(): Promise<Settings> {
 
 async function saveSettings(settings: Settings): Promise<void> {
   await setValue("settings", settings);
+  if (settings.userId) {
+    await setValue("userId", settings.userId);
+  }
 }
 
 export async function initOptions(): Promise<void> {

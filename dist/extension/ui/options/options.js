@@ -47,6 +47,9 @@ async function loadSettings() {
 }
 async function saveSettings(settings) {
     await setValue("settings", settings);
+    if (settings.userId) {
+        await setValue("userId", settings.userId);
+    }
 }
 export async function initOptions() {
     if (typeof document === "undefined") {
