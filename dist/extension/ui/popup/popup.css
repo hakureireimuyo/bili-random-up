@@ -1,0 +1,95 @@
+body {
+  margin: 0;
+  font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  background: #f7f7f9;
+  color: #1f2430;
+}
+
+.app {
+  width: 280px;
+  padding: 16px;
+}
+
+h1 {
+  font-size: 18px;
+  margin: 0 0 12px 0;
+}
+
+h2 {
+  font-size: 14px;
+  margin: 16px 0 8px 0;
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+button {
+  padding: 8px 12px;
+  border: none;
+  border-radius: 6px;
+  background: #2b6cff;
+  color: #fff;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+button:hover {
+  background: #1d5ae0;
+}
+
+.interest-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.recommend {
+  margin-top: 12px;
+  font-size: 12px;
+  color: #3a4252;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.recommend-title {
+  font-weight: 600;
+  color: #1f2430;
+}
+
+.status-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.status-item {
+  display: flex;
+  justify-content: space-between;
+  color: #3a4252;
+}
+
+.interest-item {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+}
+
+.bar {
+  display: inline-block;
+  width: 80px;
+  height: 6px;
+  background: #dfe5f2;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-left: 8px;
+}
+
+.bar-fill {
+  height: 100%;
+  background: #2b6cff;
+}

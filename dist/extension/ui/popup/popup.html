@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Bilibili Discovery</title>
+    <link rel="stylesheet" href="./popup.css" />
+  </head>
+  <body>
+    <div class="app">
+      <h1>Bilibili Discovery</h1>
+      <div class="actions">
+        <button id="btn-random-up">随机UP</button>
+        <button id="btn-random-video">随机视频</button>
+        <button id="btn-recommend">兴趣推荐</button>
+        <button id="btn-update-up">更新关注</button>
+        <button id="btn-classify-up">更新分类</button>
+      </div>
+      <div class="recommend">
+        <span class="recommend-label">推荐视频</span>
+        <span id="recommend-title" class="recommend-title">-</span>
+      </div>
+      <div class="section">
+        <h2>状态</h2>
+        <div class="status-list">
+          <div class="status-item">
+            <span>用户UID</span>
+            <span id="status-user-id">-</span>
+          </div>
+          <div class="status-item">
+            <span>UP缓存更新</span>
+            <span id="status-up-update">-</span>
+          </div>
+          <div class="status-item">
+            <span>分类更新时间</span>
+            <span id="status-classify-update">-</span>
+          </div>
+        </div>
+      </div>
+      <div class="section">
+        <h2>兴趣标签</h2>
+        <div id="interest-list" class="interest-list"></div>
+      </div>
+    </div>
+    <script type="module" src="./popup.ts"></script>
+  </body>
+</html>

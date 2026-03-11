@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Bilibili Discovery Options</title>
+    <link rel="stylesheet" href="./options.css" />
+  </head>
+  <body>
+    <div class="app">
+      <h1>设置</h1>
+      <label>
+        首页跳转模式
+        <select id="home-mode">
+          <option value="random_up">随机UP</option>
+          <option value="recommend">兴趣推荐</option>
+        </select>
+      </label>
+      <label>
+        分类方式
+        <select id="classify-mode">
+          <option value="tag">Tag统计</option>
+          <option value="llm">LLM分类</option>
+        </select>
+      </label>
+      <label>
+        缓存时间（小时）
+        <input id="cache-hours" type="number" min="1" max="168" />
+      </label>
+      <label>
+        用户 UID
+        <input id="user-id" type="number" min="1" placeholder="Bilibili UID" />
+      </label>
+      <label>
+        API Base URL
+        <input id="api-base-url" type="text" placeholder="https://api.openai.com" />
+      </label>
+      <label>
+        Model
+        <input id="api-model" type="text" placeholder="gpt-4o-mini" />
+      </label>
+      <label>
+        API Key
+        <input id="api-key" type="password" placeholder="sk-..." />
+      </label>
+      <button id="save-btn">保存</button>
+      <p id="status" class="status"></p>
+    </div>
+    <script type="module" src="./options.ts"></script>
+  </body>
+</html>
