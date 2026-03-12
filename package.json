@@ -10,7 +10,8 @@
     "dev": "npm run build && node -e \"console.log('Load extension from: D:\\\\ProjectFloder\\\\TS\\\\bili-random-up\\\\dist\\\\extension')\"",
     "probe:bili": "node ./scripts/probe-bili-api.js",
     "probe:arcopen": "node ./scripts/probe-arcopen.js",
-    "package": "node ./scripts/package-extension.js"
+    "package": "node ./scripts/package-extension.js",
+    "release": "npm run build && node ./scripts/release.js"
   },
   "devDependencies": {
     "@types/chrome": "^0.1.37",
