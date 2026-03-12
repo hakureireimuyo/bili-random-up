@@ -14,19 +14,11 @@ let refreshInterval: number | null = null;
  */
 async function refreshStats(): Promise<void> {
   console.log("[WatchStats UI] Refreshing stats...");
-  const stats =
-    (await getValue<WatchStats>("watchStats")) ?? {
-      totalSeconds: 0,
-      dailySeconds: {},
-      upSeconds: {},
-      videoSeconds: {},
-      videoTitles: {},
-      videoTags: {},
-      videoUpIds: {},
-      videoWatchCount: {},
-      videoFirstWatched: {},
-      lastUpdate: 0
-    };
+  const stats = await getValue<WatchStats>("watchStats");
+  if (!stats) {
+    console.log("[WatchStats UI] No stats found, using empty stats");
+    return;
+  }
 
   // 加载已关注的UP列表
   const upCache = await loadUPList();
@@ -105,7 +97,7 @@ async function initWatchStats(): Promise<void> {
     }
     resizeTimeout = window.setTimeout(async () => {
       const stats = await getValue<WatchStats>("watchStats");
-      if (stats) {
+      if (stats?.dailySeconds) {
         renderLineChart(stats.dailySeconds);
       }
       resizeTimeout = null;

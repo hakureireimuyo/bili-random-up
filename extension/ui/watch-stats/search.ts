@@ -102,10 +102,17 @@ function calculateTagStats(stats: WatchStats): Map<string, { seconds: number; vi
 
   for (const [videoKey, tags] of Object.entries(stats.videoTags)) {
     const seconds = stats.videoSeconds[videoKey] ?? 0;
+    const upId = stats.videoUpIds[videoKey];
+    const upKey = upId ? String(upId) : null;
+    const upSeconds = upKey ? (stats.upSeconds[upKey] ?? 0) : 0;
+    
+    // 使用视频观看时长，如果没有则使用UP观看时长（作为近似值）
+    const effectiveSeconds = seconds > 0 ? seconds : upSeconds;
+    
     for (const tag of tags || []) {
       const existing = tagStats.get(tag) ?? { seconds: 0, videoCount: 0 };
       tagStats.set(tag, {
-        seconds: existing.seconds + seconds,
+        seconds: existing.seconds + effectiveSeconds,
         videoCount: existing.videoCount + 1
       });
     }

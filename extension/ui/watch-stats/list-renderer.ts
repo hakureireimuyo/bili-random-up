@@ -73,8 +73,15 @@ export function renderTagList(
 
   for (const [videoKey, tags] of Object.entries(stats.videoTags)) {
     const seconds = stats.videoSeconds[videoKey] ?? 0;
+    const upId = stats.videoUpIds[videoKey];
+    const upKey = upId ? String(upId) : null;
+    const upSeconds = upKey ? (stats.upSeconds[upKey] ?? 0) : 0;
+    
+    // 使用视频观看时长，如果没有则使用UP观看时长（作为近似值）
+    const effectiveSeconds = seconds > 0 ? seconds : upSeconds;
+    
     for (const tag of tags || []) {
-      tagTotals[tag] = (tagTotals[tag] ?? 0) + seconds;
+      tagTotals[tag] = (tagTotals[tag] ?? 0) + effectiveSeconds;
       tagVideoCounts[tag] = (tagVideoCounts[tag] ?? 0) + 1;
     }
   }
@@ -88,7 +95,7 @@ export function renderTagList(
       extra: `视频: ${tagVideoCounts[tag] ?? 0}`
     }));
 
-  const tagListContainer = document.getElementById("tag-list");
+  const tagListContainer = document.getElementById("tag-search-results");
   if (tagListContainer) {
     tagListContainer.innerHTML = "";
     if (tagRows.length === 0) {

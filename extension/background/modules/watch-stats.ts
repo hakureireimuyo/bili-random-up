@@ -62,6 +62,8 @@ export async function updateWatchStats(
       const upKey = String(payload.upMid);
       stats.upSeconds[upKey] = (stats.upSeconds[upKey] ?? 0) + delta;
     }
+    // 第一次观看时也更新视频观看时长
+    stats.videoSeconds[videoKey] = (stats.videoSeconds[videoKey] ?? 0) + delta;
   } else {
     // 不是第一次观看，只更新视频观看时长和UP观看时长（如果UP已存在）
     stats.videoSeconds[videoKey] = (stats.videoSeconds[videoKey] ?? 0) + delta;
