@@ -1,6 +1,6 @@
-import { formatSeconds } from "./utils";
-import type { WatchStats } from "../../background/modules/common-types";
-import type { UP } from "../../storage/storage";
+import { formatSeconds } from "./utils.js";
+import type { WatchStats } from "../../background/modules/common-types.js";
+import type { UP } from "../../storage/storage.js";
 
 /**
  * 初始化视频搜索功能

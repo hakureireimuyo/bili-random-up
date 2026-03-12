@@ -1,23 +1,23 @@
-import { getValue, loadUPList } from "../../storage/storage";
-import { formatSeconds, formatTime, getRecentDays } from "./utils";
-import { renderHeatmap } from "./heatmap";
-import { renderLineChart } from "./line-chart";
-import { renderTagList, renderUPList, renderVideoList } from "./list-renderer";
-import { initVideoSearch, initTagSearch } from "./search";
+import { getValue, loadUPList } from "../../storage/storage.js";
+import { formatSeconds, formatTime, getRecentDays } from "./utils.js";
+import { renderHeatmap } from "./heatmap.js";
+import { renderLineChart } from "./line-chart.js";
+import { renderTagList, renderUPList, renderVideoList } from "./list-renderer.js";
+import { initVideoSearch, initTagSearch } from "./search.js";
 import type { WatchStats } from "../../background/modules/common-types";
 import type { UP } from "../../storage/storage";
-
-let refreshInterval: number | null = null;
 
 /**
  * 刷新统计数据
  */
-async function refreshStats(): Promise<void> {
-  console.log("[WatchStats UI] Refreshing stats...");
+async function refreshStats(): Promise<WatchStats | null> {
+  console.log("[WatchStats UI] Loading stats...");
   const stats = await getValue<WatchStats>("watchStats");
+  console.log("[WatchStats UI] Retrieved stats:", stats);
+  
   if (!stats) {
-    console.log("[WatchStats UI] No stats found, using empty stats");
-    return;
+    console.log("[WatchStats UI] No stats found");
+    return null;
   }
 
   // 加载已关注的UP列表
@@ -58,61 +58,30 @@ async function refreshStats(): Promise<void> {
   // 渲染视频列表
   renderVideoList(stats);
 
-  // 初始化视频搜索功能
-  initVideoSearch(stats);
-
-  // 初始化标签搜索功能
-  initTagSearch(stats);
-
   // 显示原始数据（调试用）
   const rawEl = document.getElementById("raw-stats");
   if (rawEl) {
     rawEl.textContent = JSON.stringify(stats, null, 2);
   }
+  
+  return stats;
 }
 
 /**
  * 初始化观看统计页面
  */
 async function initWatchStats(): Promise<void> {
-  // 添加刷新按钮事件
-  const refreshBtn = document.getElementById("btn-refresh");
-  refreshBtn?.addEventListener("click", () => {
-    void refreshStats();
-  });
-
   // 初始加载数据
-  await refreshStats();
+  const stats = await refreshStats();
 
-  // 设置自动刷新（每5秒刷新一次）
-  refreshInterval = window.setInterval(() => {
-    void refreshStats();
-  }, 5000);
-
-  // 窗口大小改变时重新绘制折线图
-  let resizeTimeout: number | null = null;
-  window.addEventListener("resize", () => {
-    if (resizeTimeout !== null) {
-      clearTimeout(resizeTimeout);
-    }
-    resizeTimeout = window.setTimeout(async () => {
-      const stats = await getValue<WatchStats>("watchStats");
-      if (stats?.dailySeconds) {
-        renderLineChart(stats.dailySeconds);
-      }
-      resizeTimeout = null;
-    }, 250);
-  });
+  // 只在有数据时初始化搜索功能
+  if (stats) {
+    initVideoSearch(stats);
+    initTagSearch(stats);
+  }
 }
 
 // 页面加载时初始化
 if (typeof document !== "undefined") {
   void initWatchStats();
-  // 页面卸载时清除定时器
-  window.addEventListener("beforeunload", () => {
-    if (refreshInterval !== null) {
-      clearInterval(refreshInterval);
-      refreshInterval = null;
-    }
-  });
 }

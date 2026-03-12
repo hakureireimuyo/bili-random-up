@@ -31,9 +31,13 @@ writeFileSync(join(distExtension, "manifest.json"), JSON.stringify(manifestJson,
 
 const popupHtmlPath = join(distExtension, "ui", "popup", "popup.html");
 const optionsHtmlPath = join(distExtension, "ui", "options", "options.html");
+const watchStatsHtmlPath = join(distExtension, "ui", "watch-stats", "watch-stats.html");
 
 const popupHtml = readFileSync(popupHtmlPath, "utf-8").replace(/\.ts"/g, ".js\"");
 writeFileSync(popupHtmlPath, popupHtml);
 
 const optionsHtml = readFileSync(optionsHtmlPath, "utf-8").replace(/\.ts"/g, ".js\"");
 writeFileSync(optionsHtmlPath, optionsHtml);
+
+const watchStatsHtml = readFileSync(watchStatsHtmlPath, "utf-8").replace(/\.ts"/g, ".js\"");
+writeFileSync(watchStatsHtmlPath, watchStatsHtml);

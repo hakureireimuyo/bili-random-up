@@ -1,4 +1,4 @@
-import { getRecentDays, formatSeconds } from "./utils";
+import { getRecentDays, formatSeconds } from "./utils.js";
 
 /**
  * 渲染近7天趋势折线图

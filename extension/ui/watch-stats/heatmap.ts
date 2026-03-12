@@ -1,4 +1,4 @@
-import { getMonthDays, getHeatmapColor, formatSeconds } from "./utils";
+import { getMonthDays, getHeatmapColor, formatSeconds } from "./utils.js";
 
 /**
  * 渲染月度热力图

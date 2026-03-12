@@ -1,6 +1,6 @@
-import { formatSeconds } from "./utils";
-import type { WatchStats } from "../../background/modules/common-types";
-import type { UP } from "../../storage/storage";
+import { formatSeconds } from "./utils.js";
+import type { WatchStats } from "../../background/modules/common-types.js";
+import type { UP } from "../../storage/storage.js";
 
 /**
  * 渲染简单的列表
@@ -95,7 +95,7 @@ export function renderTagList(
       extra: `视频: ${tagVideoCounts[tag] ?? 0}`
     }));
 
-  const tagListContainer = document.getElementById("tag-search-results");
+  const tagListContainer = document.getElementById("tag-list");
   if (tagListContainer) {
     tagListContainer.innerHTML = "";
     if (tagRows.length === 0) {
