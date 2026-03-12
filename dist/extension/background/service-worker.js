@@ -1,7 +1,7 @@
 /**
  * Background service worker initialization.
  */
-import { getFollowedUPs, getUPInfo, getUPVideos, getVideoTags } from "../api/bili-api.js";
+import { getFollowedUPs, getUPInfo, getUPVideos, getUPVideosForClassification, getVideoTags } from "../api/bili-api.js";
 import { classifyUP } from "../engine/classifier.js";
 import { randomUP, randomVideo, recommendUP, recommendVideo, updateInterestFromWatch } from "../engine/recommender.js";
 import { getValue, saveUPList, setValue } from "../storage/storage.js";
@@ -24,17 +24,32 @@ export async function updateUpListTask(options = {}) {
     const getFollowedUPsFn = options.getFollowedUPsFn ?? getFollowedUPs;
     const saveUPListFn = options.saveUPListFn ?? saveUPList;
     const getValueFn = options.getValueFn ?? ((key) => getValue(key));
+    const notifications = options.notifications ?? chrome.notifications;
     const settings = (await getValueFn("settings"));
     const uid = options.uid ?? (await getValueFn("userId")) ?? settings?.userId;
     const uidValue = typeof uid === "number" ? uid : Number(uid);
     if (!uidValue || Number.isNaN(uidValue)) {
         console.warn("[Background] Missing userId for update");
-        return false;
+        return { success: false };
     }
-    const upList = await getFollowedUPsFn(uidValue);
-    await saveUPListFn(upList);
-    console.log("[Background] Updated UP list", upList.length);
-    return true;
+    // Get existing UP list for incremental update
+    const existingCache = (await getValueFn("upList"));
+    const existingUPs = existingCache?.upList ?? [];
+    // Fetch UP list with incremental update
+    const result = await getFollowedUPsFn(uidValue, {}, existingUPs);
+    // Save the updated UP list
+    await saveUPListFn(result.upList);
+    console.log("[Background] Updated UP list", result.upList.length, "New UPs:", result.newCount);
+    // Show notification if there are new UPs
+    if (result.newCount > 0 && notifications) {
+        notifications.create({
+            type: "basic",
+            iconUrl: chrome.runtime?.getURL?.("icons/icon128.png") || "",
+            title: "关注更新",
+            message: `发现 ${result.newCount} 个新关注的UP主！`
+        });
+    }
+    return { success: true, newCount: result.newCount };
 }
 /**
  * Classify UPs in batches and store tags.
@@ -44,6 +59,13 @@ export async function classifyUpTask(options = {}) {
     const getValueFn = options.getValueFn ?? ((key) => getValue(key));
     const setValueFn = options.setValueFn ?? ((key, value) => setValue(key, value));
     const batchSize = options.batchSize ?? 10;
+    const useAPIMethod = options.useAPIMethod ?? false;
+    const maxVideos = options.maxVideos ?? 30;
+    // 从设置中读取classifyMethod
+    const settings = (await getValueFn("settings"));
+    const classifyMethod = settings?.classifyMethod ?? "api";
+    // 如果没有明确指定useAPIMethod，则使用设置中的classifyMethod
+    const shouldUseAPIMethod = useAPIMethod || classifyMethod === "api";
     const cache = (await getValueFn("upList"));
     const list = cache?.upList ?? [];
     if (list.length === 0) {
@@ -54,6 +76,7 @@ export async function classifyUpTask(options = {}) {
     const videoCounts = (await getValueFn("videoCounts")) ?? {};
     const batch = list;
     let processed = 0;
+    console.log("[Background] Classify UPs using method:", shouldUseAPIMethod ? "API" : "Page");
     for (let i = 0; i < batch.length; i += batchSize) {
         const chunk = batch.slice(i, i + batchSize);
         for (const up of chunk) {
@@ -61,9 +84,14 @@ export async function classifyUpTask(options = {}) {
             console.log("[Background] Classify UP", up.mid, {
                 existingTags: existing.length
             });
+            // 根据选项选择使用API方法还是原有方法
             const profile = await classifyUPFn(up.mid, {
                 existingTags: existing,
-                getUPVideosFn: (mid) => getUPVideos(mid, { fallbackRequest: proxyApiRequest }),
+                useAPIMethod: shouldUseAPIMethod,
+                maxVideos: maxVideos,
+                getUPVideosFn: shouldUseAPIMethod
+                    ? (mid) => getUPVideosForClassification(mid, maxVideos, { fallbackRequest: proxyApiRequest })
+                    : (mid) => getUPVideos(mid, { fallbackRequest: proxyApiRequest }),
                 getUPInfoFn: (mid) => getUPInfo(mid, { fallbackRequest: proxyApiRequest }),
                 getVideoTagsFn: (bvid) => getVideoTags(bvid, { fallbackRequest: proxyApiRequest })
             });

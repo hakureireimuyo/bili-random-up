@@ -10,6 +10,7 @@ export interface Settings {
   apiBaseUrl: string;
   apiModel: string;
   apiKey: string;
+  classifyMethod: "api" | "page";
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -17,7 +18,8 @@ export const DEFAULT_SETTINGS: Settings = {
   userId: null,
   apiBaseUrl: "https://api.deepseek.com",
   apiModel: "deepseek-chat",
-  apiKey: ""
+  apiKey: "",
+  classifyMethod: "api"
 };
 
 export function normalizeSettings(input: Partial<Settings>): Settings {
@@ -29,13 +31,19 @@ export function normalizeSettings(input: Partial<Settings>): Settings {
   const apiBaseUrl = String(input.apiBaseUrl ?? DEFAULT_SETTINGS.apiBaseUrl).trim();
   const apiModel = String(input.apiModel ?? DEFAULT_SETTINGS.apiModel).trim();
   const apiKey = String(input.apiKey ?? DEFAULT_SETTINGS.apiKey).trim();
+  const classifyMethodRaw = input.classifyMethod ?? DEFAULT_SETTINGS.classifyMethod;
+  const classifyMethod: "api" | "page" =
+    classifyMethodRaw === "api" || classifyMethodRaw === "page"
+      ? classifyMethodRaw
+      : DEFAULT_SETTINGS.classifyMethod;
 
   return {
     cacheHours,
     userId,
     apiBaseUrl,
     apiModel,
-    apiKey
+    apiKey,
+    classifyMethod
   };
 }
 
@@ -68,6 +76,7 @@ export async function initOptions(): Promise<void> {
   const statsLink = document.getElementById("open-stats") as HTMLAnchorElement | null;
   const cacheHoursEl = document.getElementById("cache-hours") as HTMLInputElement | null;
   const userIdEl = document.getElementById("user-id") as HTMLInputElement | null;
+  const classifyMethodEl = document.getElementById("classify-method") as HTMLSelectElement | null;
   const apiBaseUrlEl = document.getElementById("api-base-url") as HTMLInputElement | null;
   const apiModelEl = document.getElementById("api-model") as HTMLInputElement | null;
   const apiKeyEl = document.getElementById("api-key") as HTMLInputElement | null;
@@ -76,6 +85,7 @@ export async function initOptions(): Promise<void> {
   const settings = await loadSettings();
   if (cacheHoursEl) cacheHoursEl.value = String(settings.cacheHours);
   if (userIdEl && settings.userId) userIdEl.value = String(settings.userId);
+  if (classifyMethodEl) classifyMethodEl.value = settings.classifyMethod;
   if (apiBaseUrlEl) apiBaseUrlEl.value = settings.apiBaseUrl;
   if (apiModelEl) apiModelEl.value = settings.apiModel;
   if (apiKeyEl) apiKeyEl.value = settings.apiKey;
@@ -89,6 +99,7 @@ export async function initOptions(): Promise<void> {
     const next = normalizeSettings({
       cacheHours: Number(cacheHoursEl?.value ?? DEFAULT_SETTINGS.cacheHours),
       userId: Number(userIdEl?.value ?? DEFAULT_SETTINGS.userId),
+      classifyMethod: (classifyMethodEl?.value as "api" | "page") ?? DEFAULT_SETTINGS.classifyMethod,
       apiBaseUrl: String(apiBaseUrlEl?.value ?? DEFAULT_SETTINGS.apiBaseUrl),
       apiModel: String(apiModelEl?.value ?? DEFAULT_SETTINGS.apiModel),
       apiKey: String(apiKeyEl?.value ?? DEFAULT_SETTINGS.apiKey)

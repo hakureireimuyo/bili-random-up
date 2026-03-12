@@ -2,7 +2,7 @@
  * UP classification engine.
  */
 
-import { getUPInfo, getUPVideos, getVideoTags } from "../api/bili-api.js";
+import { getUPInfo, getUPVideos, getUPVideosForClassification, getVideoTags } from "../api/bili-api.js";
 import { chatComplete, parseTagsFromContent } from "../engine/llm-client.js";
 
 export interface Video {
@@ -35,6 +35,8 @@ interface ClassifierOptions {
     existingTags?: string[]
   ) => Promise<string[]>;
   existingTags?: string[];
+  useAPIMethod?: boolean; // 是否使用API方法获取视频（默认false，使用原有方法）
+  maxVideos?: number; // 使用API方法时的最大视频数（默认30）
 }
 
 /**
@@ -149,18 +151,35 @@ export async function classifyUP(
   mid: number,
   options: ClassifierOptions = {}
 ): Promise<UPTagProfile> {
-  const getUPVideosFn =
-    options.getUPVideosFn ?? ((value: number) => getUPVideos(value));
+  const useAPIMethod = options.useAPIMethod ?? false;
+  const maxVideos = options.maxVideos ?? 30;
+  
+  // 根据选项选择使用API方法还是原有方法
+  const getUPVideosFn = options.getUPVideosFn ?? 
+    (useAPIMethod 
+      ? (value: number) => getUPVideosForClassification(value, maxVideos)
+      : (value: number) => getUPVideos(value));
+  
   const getUPInfoFn =
     options.getUPInfoFn ?? ((value: number) => getUPInfo(value));
   const classifyWithLLMFn = options.classifyWithLLMFn ?? classifyWithLLM;
   const existingTags = options.existingTags ?? [];
 
-  console.log("[Classifier] Classify UP", mid);
+  console.log("[Classifier] Classify UP", mid, "Method:", useAPIMethod ? "API" : "Original");
   const videos = await getUPVideosFn(mid);
   const videoCount = videos.length;
-  const sampled = sampleVideos(videos, 5);
-  const collectedTags = await collectVideoTags(sampled, options);
+  
+  // 如果使用API方法，视频已经包含标签，不需要再次获取
+  let collectedTags: string[] = [];
+  if (useAPIMethod) {
+    // API方法返回的视频已经包含标签
+    collectedTags = videos.flatMap(v => v.tags || []);
+  } else {
+    // 原有方法需要单独获取标签
+    const sampled = sampleVideos(videos, 5);
+    collectedTags = await collectVideoTags(sampled, options);
+  }
+  
   const tagStats = extractTopTags(
     [{ bvid: "tags", title: "tags", tags: collectedTags }],
     5
@@ -174,6 +193,8 @@ export async function classifyUP(
   if (existingTags.length > 0) {
     console.log("[Classifier] Skip LLM (existing tags)", mid, existingTags);
   }
+  
+  const sampled = sampleVideos(videos, 5);
   const llmTags =
     upProfile && existingTags.length === 0
       ? await classifyWithLLMFn(upProfile, sampled, existingTags)

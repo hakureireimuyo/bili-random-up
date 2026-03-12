@@ -39,9 +39,9 @@ test("apiRequest returns null on failure", async () => {
 
 test("getFollowedUPs returns list", async () => {
   const fetchFn = createFetchOk({ data: { list: [{ mid: 1, name: "UP" }] } });
-  const list = await getFollowedUPs(123, { fetchFn });
-  assert(list.length === 1, "expected one UP");
-  assert(list[0].mid === 1, "expected mid 1");
+  const result = await getFollowedUPs(123, { fetchFn });
+  assert(result.upList.length === 1, "expected one UP");
+  assert(result.upList[0].mid === 1, "expected mid 1");
 });
 
 test("getUPVideos returns list", async () => {

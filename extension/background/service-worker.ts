@@ -2,7 +2,7 @@
  * Background service worker initialization.
  */
 
-import { getFollowedUPs, getUPInfo, getUPVideos, getVideoTags } from "../api/bili-api.js";
+import { getFollowedUPs, getUPInfo, getUPVideos, getUPVideosForClassification, getVideoTags } from "../api/bili-api.js";
 import { classifyUP } from "../engine/classifier.js";
 import {
   randomUP,
@@ -48,6 +48,7 @@ export interface RuntimeManager {
       ) => void
     ) => void;
   };
+  getURL?: (path: string) => string;
 }
 
 export interface NotificationManager {
@@ -78,6 +79,8 @@ interface BackgroundOptions {
   uid?: number;
   batchSize?: number;
   classifyWithPageDataFn?: (mid: number, pageData: any, existingTags: string[]) => Promise<string[]>;
+  useAPIMethod?: boolean; // 是否使用API方法获取视频（默认false）
+  maxVideos?: number; // 使用API方法时的最大视频数（默认30）
 }
 
 declare const chrome: {
@@ -131,7 +134,7 @@ export async function updateUpListTask(
   if (result.newCount > 0 && notifications) {
     notifications.create({
       type: "basic",
-      iconUrl: chrome.runtime.getURL("icons/icon128.png"),
+      iconUrl: chrome.runtime?.getURL?.("icons/icon128.png") || "",
       title: "关注更新",
       message: `发现 ${result.newCount} 个新关注的UP主！`
     });
@@ -152,6 +155,14 @@ export async function classifyUpTask(
   const setValueFn =
     options.setValueFn ?? ((key: string, value: unknown) => setValue(key, value));
   const batchSize = options.batchSize ?? 10;
+  const useAPIMethod = options.useAPIMethod ?? false;
+  const maxVideos = options.maxVideos ?? 30;
+  
+  // 从设置中读取classifyMethod
+  const settings = (await getValueFn("settings")) as { classifyMethod?: "api" | "page" } | null;
+  const classifyMethod = settings?.classifyMethod ?? "api";
+  // 如果没有明确指定useAPIMethod，则使用设置中的classifyMethod
+  const shouldUseAPIMethod = useAPIMethod || classifyMethod === "api";
 
   const cache = (await getValueFn("upList")) as { upList?: { mid: number }[] } | null;
   const list = cache?.upList ?? [];
@@ -167,6 +178,8 @@ export async function classifyUpTask(
   const batch = list;
   let processed = 0;
 
+  console.log("[Background] Classify UPs using method:", shouldUseAPIMethod ? "API" : "Page");
+
   for (let i = 0; i < batch.length; i += batchSize) {
     const chunk = batch.slice(i, i + batchSize);
     for (const up of chunk) {
@@ -174,10 +187,15 @@ export async function classifyUpTask(
       console.log("[Background] Classify UP", up.mid, {
         existingTags: existing.length
       });
+      
+      // 根据选项选择使用API方法还是原有方法
       const profile = await classifyUPFn(up.mid, {
         existingTags: existing,
-        getUPVideosFn: (mid: number) =>
-          getUPVideos(mid, { fallbackRequest: proxyApiRequest }),
+        useAPIMethod: shouldUseAPIMethod,
+        maxVideos: maxVideos,
+        getUPVideosFn: shouldUseAPIMethod
+          ? (mid: number) => getUPVideosForClassification(mid, maxVideos, { fallbackRequest: proxyApiRequest })
+          : (mid: number) => getUPVideos(mid, { fallbackRequest: proxyApiRequest }),
         getUPInfoFn: (mid: number) =>
           getUPInfo(mid, { fallbackRequest: proxyApiRequest }),
         getVideoTagsFn: (bvid: string) =>

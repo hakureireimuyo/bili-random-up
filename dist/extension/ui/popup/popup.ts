@@ -78,6 +78,36 @@ function sendAction(type: string): void {
   chrome.runtime.sendMessage({ type });
 }
 
+async function handleUpdateUpList(): Promise<void> {
+  if (typeof chrome === "undefined") {
+    console.log("[Popup] Update UP list");
+    return;
+  }
+
+  try {
+    const response = await new Promise<{ success: boolean; newCount?: number }>((resolve) => {
+      chrome.runtime.sendMessage({ type: "update_up_list" }, (response) => {
+        resolve(response as { success: boolean; newCount?: number });
+      });
+    });
+
+    if (response.success) {
+      if (response.newCount && response.newCount > 0) {
+        alert(`更新成功！发现 ${response.newCount} 个新关注的UP主`);
+      } else {
+        alert("更新成功！没有发现新的UP主");
+      }
+      // Reload status after update
+      void loadStatus();
+    } else {
+      alert("更新失败，请检查设置");
+    }
+  } catch (error) {
+    console.error("[Popup] Update UP list error", error);
+    alert("更新失败，请稍后重试");
+  }
+}
+
 function sendActionWithResponse(type: string): Promise<unknown> {
   if (typeof chrome === "undefined") {
     return Promise.resolve(null);
@@ -166,7 +196,7 @@ export function initPopup(): void {
   const statsBtn = document.getElementById("btn-stats");
   const settingsBtn = document.getElementById("btn-settings");
 
-  updateUpBtn?.addEventListener("click", () => sendAction("update_up_list"));
+  updateUpBtn?.addEventListener("click", () => void handleUpdateUpList());
   autoClassifyBtn?.addEventListener("click", () => sendAction("start_auto_classification"));
   randomUpBtn?.addEventListener("click", () => void jumpToRandomUP());
   statsBtn?.addEventListener("click", () => {

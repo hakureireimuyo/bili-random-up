@@ -13,27 +13,27 @@ test("scheduleAlarms registers both alarms", () => {
 });
 test("updateUpListTask uses uid and saves list", async () => {
     let saved = 0;
-    const ok = await updateUpListTask({
+    const result = await updateUpListTask({
         uid: 1,
         getValueFn: async () => null,
-        getFollowedUPsFn: async () => [{ mid: 1, name: "UP", face: "", sign: "", follow_time: 1 }],
+        getFollowedUPsFn: async () => ({ upList: [{ mid: 1, name: "UP", face: "", sign: "", follow_time: 1 }], newCount: 1 }),
         saveUPListFn: async () => {
             saved += 1;
         }
     });
-    assert(ok, "expected ok");
+    assert(result.success, "expected ok");
     assert(saved === 1, "expected save once");
 });
 test("updateUpListTask reads uid from settings", async () => {
     let saved = 0;
-    const ok = await updateUpListTask({
+    const result = await updateUpListTask({
         getValueFn: async (key) => key === "settings" ? { userId: 9 } : null,
-        getFollowedUPsFn: async () => [{ mid: 1, name: "UP", face: "", sign: "", follow_time: 1 }],
+        getFollowedUPsFn: async () => ({ upList: [{ mid: 1, name: "UP", face: "", sign: "", follow_time: 1 }], newCount: 1 }),
         saveUPListFn: async () => {
             saved += 1;
         }
     });
-    assert(ok, "expected ok");
+    assert(result.success, "expected ok");
     assert(saved === 1, "expected save once");
 });
 test("classifyUpTask stores tags", async () => {
@@ -69,7 +69,7 @@ test("handleAlarm routes to update and classify", async () => {
     await handleAlarm({ name: ALARM_UPDATE_UP_LIST }, {
         uid: 1,
         getValueFn: async () => null,
-        getFollowedUPsFn: async () => [],
+        getFollowedUPsFn: async () => ({ upList: [], newCount: 0 }),
         saveUPListFn: async () => {
             updated += 1;
         }
@@ -151,7 +151,7 @@ test("handleMessage update_up_list triggers update", async () => {
     await handleMessage({ type: "update_up_list" }, {
         uid: 1,
         getValueFn: async () => null,
-        getFollowedUPsFn: async () => [],
+        getFollowedUPsFn: async () => ({ upList: [], newCount: 0 }),
         saveUPListFn: async () => {
             updated += 1;
         },

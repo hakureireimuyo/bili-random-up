@@ -56,11 +56,18 @@ export async function apiRequest(url, options = {}) {
 }
 /**
  * Fetch followed UP list for a user.
+ * @param uid User ID
+ * @param options API request options
+ * @param existingUPs Existing UP list for incremental update (optional)
+ * @returns Object containing all UPs and count of new UPs
  */
-export async function getFollowedUPs(uid, options = {}) {
+export async function getFollowedUPs(uid, options = {}, existingUPs) {
     const pageSize = 50;
     const all = [];
+    const existingSet = new Set(existingUPs?.map(up => up.mid) || []);
     let page = 1;
+    let consecutiveAllExistCount = 0;
+    const maxConsecutiveAllExist = 3; // 连续3页都全部存在则停止拉取
     while (true) {
         const url = `https://api.bilibili.com/x/relation/followings?vmid=${uid}&pn=${page}&ps=${pageSize}&order=desc`;
         const data = await apiRequest(url, options);
@@ -80,14 +87,29 @@ export async function getFollowedUPs(uid, options = {}) {
             sign: item.sign || item.usign || "",
             follow_time: item.mtime || item.follow_time || 0
         }));
+        // Check if all UPs in this page already exist
+        const allExist = upList.every(up => existingSet.has(up.mid));
+        if (allExist) {
+            consecutiveAllExistCount++;
+            console.log(`[API] Page ${page}: All ${upList.length} UPs already exist`);
+            if (consecutiveAllExistCount >= maxConsecutiveAllExist) {
+                console.log(`[API] Stopping after ${maxConsecutiveAllExist} consecutive pages with all existing UPs`);
+                break;
+            }
+        }
+        else {
+            consecutiveAllExistCount = 0;
+        }
         all.push(...upList);
         if (list.length < pageSize) {
             break;
         }
         page += 1;
     }
-    console.log("[API] Total UPs fetched:", all.length);
-    return all;
+    // Calculate new UPs
+    const newUPs = all.filter(up => !existingSet.has(up.mid));
+    console.log("[API] Total UPs fetched:", all.length, "New UPs:", newUPs.length);
+    return { upList: all, newCount: newUPs.length };
 }
 /**
  * Fetch videos of a specific UP.
@@ -125,4 +147,315 @@ export async function getUPInfo(mid, options = {}) {
  */
 export function __resetRateLimiter() {
     lastRequestAt = 0;
+}
+// ==================== WBI 签名机制 ====================
+let cachedWBIKeys = null;
+let wbiKeysExpireAt = 0;
+const WBI_CACHE_DURATION = 24 * 60 * 60 * 1000; // 24小时
+/**
+ * 获取 WBI 签名所需的密钥
+ */
+export async function getWBIKeys(options = {}) {
+    const now = Date.now();
+    if (cachedWBIKeys && now < wbiKeysExpireAt) {
+        return cachedWBIKeys;
+    }
+    const url = "https://api.bilibili.com/x/web-interface/nav";
+    const data = await apiRequest(url, options);
+    if (!data?.data?.wbi_img) {
+        return null;
+    }
+    const img_url = data.data.wbi_img.img_url;
+    const sub_url = data.data.wbi_img.sub_url;
+    // 从 URL 中提取 img_key 和 sub_key
+    const img_key = img_url.match(/img_key=([a-zA-Z0-9]+)/)?.[1] || "";
+    const sub_key = sub_url.match(/sub_key=([a-zA-Z0-9]+)/)?.[1] || "";
+    // 生成 mixin_key
+    const mixin_key = img_key + sub_key;
+    cachedWBIKeys = { img_key, sub_key, mixin_key };
+    wbiKeysExpireAt = now + WBI_CACHE_DURATION;
+    return cachedWBIKeys;
+}
+/**
+ * 生成 WBI 签名
+ * @param params 请求参数对象
+ * @param options API 请求选项
+ * @returns 包含 w_rid 和 wts 的对象
+ */
+export async function generateWBISign(params, options = {}) {
+    const wbiKeys = await getWBIKeys(options);
+    if (!wbiKeys) {
+        return null;
+    }
+    // 添加时间戳
+    const wts = Math.floor(Date.now() / 1000).toString();
+    const paramsWithTs = { ...params, wts };
+    // 按键名排序
+    const sortedParams = Object.entries(paramsWithTs)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .reduce((result, [key, value]) => {
+        result[key] = value;
+        return result;
+    }, {});
+    // 拼接参数字符串
+    const queryString = Object.entries(sortedParams)
+        .map(([key, value]) => `${key}=${value}`)
+        .join("&");
+    // 计算 MD5
+    const w_rid = await md5(queryString + wbiKeys.mixin_key);
+    return { w_rid, wts };
+}
+/**
+ * MD5 哈希函数
+ */
+async function md5(str) {
+    // 将字符串转换为 Uint8Array
+    const encoder = new TextEncoder();
+    const data = encoder.encode(str);
+    // 使用 SubtleCrypto 计算 SHA-256
+    const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+    // 将 ArrayBuffer 转换为十六进制字符串
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const hashHex = hashArray
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join("");
+    // 截取前32位作为模拟的MD5
+    return hashHex.substring(0, 32);
+}
+/**
+ * 获取视频详情
+ * @param bvid BV号
+ * @param aid AV号（可选）
+ * @param options API请求选项
+ */
+export async function getVideoDetail(bvid, aid, options = {}) {
+    let url = "https://api.bilibili.com/x/web-interface/view?";
+    if (bvid) {
+        url += `bvid=${bvid}`;
+    }
+    else if (aid) {
+        url += `aid=${aid}`;
+    }
+    else {
+        return null;
+    }
+    const data = await apiRequest(url, options);
+    return data?.data ?? null;
+}
+/**
+ * 获取视频统计
+ * @param bvid BV号
+ * @param options API请求选项
+ */
+export async function getVideoStat(bvid, options = {}) {
+    const url = `https://api.bilibili.com/x/web-interface/archive/stat?bvid=${bvid}`;
+    const data = await apiRequest(url, options);
+    return data?.data ?? null;
+}
+/**
+ * 获取视频标签
+ * @param bvid BV号
+ * @param options API请求选项
+ */
+export async function getVideoTagsDetail(bvid, options = {}) {
+    const url = `https://api.bilibili.com/x/tag/archive/tags?bvid=${bvid}`;
+    const data = await apiRequest(url, options);
+    return data?.data ?? [];
+}
+/**
+ * 获取相关视频
+ * @param bvid BV号
+ * @param options API请求选项
+ */
+export async function getRelatedVideos(bvid, options = {}) {
+    const url = `https://api.bilibili.com/x/web-interface/archive/related?bvid=${bvid}`;
+    const data = await apiRequest(url, options);
+    return data?.data ?? [];
+}
+/**
+ * 获取用户收藏夹列表
+ * @param up_mid 用户ID
+ * @param options API请求选项
+ */
+export async function getFavoriteFolders(up_mid, options = {}) {
+    const url = `https://api.bilibili.com/x/v3/fav/folder/created/list-all?up_mid=${up_mid}`;
+    const data = await apiRequest(url, options);
+    return data?.data?.list ?? [];
+}
+/**
+ * 获取收藏夹视频
+ * @param media_id 收藏夹ID
+ * @param pn 页码
+ * @param ps 每页数量
+ * @param options API请求选项
+ */
+export async function getFavoriteVideos(media_id, pn = 1, ps = 20, options = {}) {
+    const url = `https://api.bilibili.com/x/v3/fav/resource/list?media_id=${media_id}&pn=${pn}&ps=${ps}`;
+    const data = await apiRequest(url, options);
+    return data?.data?.medias ?? [];
+}
+/**
+ * 获取粉丝数量
+ * @param vmid 用户ID
+ * @param options API请求选项
+ */
+export async function getFollowStat(vmid, options = {}) {
+    const url = `https://api.bilibili.com/x/relation/stat?vmid=${vmid}`;
+    const data = await apiRequest(url, options);
+    return data?.data ?? null;
+}
+// ==================== UP主视频 API ====================
+/**
+ * 获取UP视频列表（需要WBI签名）
+ * @param mid UP id
+ * @param pn 页码
+ * @param ps 数量
+ * @param options API请求选项
+ */
+export async function getUPVideosWithWBI(mid, pn = 1, ps = 30, options = {}) {
+    const params = { mid, pn, ps };
+    const sign = await generateWBISign(params, options);
+    if (!sign) {
+        return [];
+    }
+    const url = `https://api.bilibili.com/x/space/wbi/arc/search?mid=${mid}&pn=${pn}&ps=${ps}&w_rid=${sign.w_rid}&wts=${sign.wts}`;
+    const data = await apiRequest(url, options);
+    return data?.data?.list?.vlist ?? [];
+}
+/**
+ * 获取UP视频列表用于LLM分类（需要WBI签名）
+ * 这个方法会获取更详细的视频信息，包括视频标签
+ * @param mid UP id
+ * @param maxVideos 最大获取视频数（默认30）
+ * @param options API请求选项
+ * @returns 包含视频标签的完整视频列表
+ */
+export async function getUPVideosForClassification(mid, maxVideos = 30, options = {}) {
+    const pageSize = 30;
+    const allVideos = [];
+    let page = 1;
+    while (allVideos.length < maxVideos) {
+        const params = { mid, pn: page, ps: pageSize };
+        const sign = await generateWBISign(params, options);
+        if (!sign) {
+            break;
+        }
+        const url = `https://api.bilibili.com/x/space/wbi/arc/search?mid=${mid}&pn=${page}&ps=${pageSize}&w_rid=${sign.w_rid}&wts=${sign.wts}`;
+        const data = await apiRequest(url, options);
+        const list = data?.data?.list?.vlist;
+        if (!Array.isArray(list) || list.length === 0) {
+            break;
+        }
+        // 处理每页的视频
+        for (const item of list) {
+            if (allVideos.length >= maxVideos) {
+                break;
+            }
+            const bvid = item.bvid;
+            if (!bvid)
+                continue;
+            // 获取视频标签
+            const tags = await getVideoTags(bvid, options);
+            allVideos.push({
+                bvid,
+                aid: item.aid,
+                title: item.title || "",
+                play: item.play || 0,
+                duration: item.length || 0,
+                pubdate: item.created || item.pubdate || 0,
+                tags
+            });
+        }
+        // 如果获取的视频少于页大小，说明已经没有更多视频
+        if (list.length < pageSize) {
+            break;
+        }
+        page++;
+    }
+    console.log(`[API] Fetched ${allVideos.length} videos for UP ${mid}`);
+    return allVideos;
+}
+/**
+ * 综合搜索
+ * @param keyword 关键词
+ * @param page 页码
+ * @param options API请求选项
+ */
+export async function searchAll(keyword, page = 1, options = {}) {
+    const url = `https://api.bilibili.com/x/web-interface/search/all/v2?keyword=${encodeURIComponent(keyword)}&page=${page}`;
+    const data = await apiRequest(url, options);
+    return data ?? null;
+}
+/**
+ * 视频搜索
+ * @param keyword 关键词
+ * @param page 页码
+ * @param order 排序方式
+ * @param options API请求选项
+ */
+export async function searchVideos(keyword, page = 1, order = "click", options = {}) {
+    const url = `https://api.bilibili.com/x/web-interface/search/type?search_type=video&keyword=${encodeURIComponent(keyword)}&page=${page}&order=${order}`;
+    const data = await apiRequest(url, options);
+    return data?.data?.result ?? null;
+}
+// ==================== 分区 API ====================
+/**
+ * 获取分区视频
+ * @param rid 分区ID
+ * @param pn 页码
+ * @param ps 每页数量
+ * @param options API请求选项
+ */
+export async function getRegionVideos(rid, pn = 1, ps = 20, options = {}) {
+    const url = `https://api.bilibili.com/x/web-interface/dynamic/region?rid=${rid}&pn=${pn}&ps=${ps}`;
+    const data = await apiRequest(url, options);
+    return data?.data?.archives ?? [];
+}
+/**
+ * 获取排行榜
+ * @param rid 分区ID
+ * @param day 天数
+ * @param options API请求选项
+ */
+export async function getRanking(rid = 0, day = 3, options = {}) {
+    const url = `https://api.bilibili.com/x/web-interface/ranking?rid=${rid}&day=${day}`;
+    const data = await apiRequest(url, options);
+    return data?.data?.list ?? [];
+}
+/**
+ * 获取评论列表
+ * @param oid 视频ID
+ * @param type 类型（1表示视频）
+ * @param options API请求选项
+ */
+export async function getComments(oid, type = 1, options = {}) {
+    const url = `https://api.bilibili.com/x/v2/reply/main?oid=${oid}&type=${type}`;
+    const data = await apiRequest(url, options);
+    return data?.data?.replies ?? [];
+}
+/**
+ * 获取弹幕列表
+ * @param cid 视频CID
+ * @param options API请求选项
+ */
+export async function getDanmakuList(cid, options = {}) {
+    const url = `https://api.bilibili.com/x/v1/dm/list.so?oid=${cid}`;
+    const data = await apiRequest(url, options);
+    if (!data) {
+        return [];
+    }
+    // 解析XML格式的弹幕数据
+    const parser = new DOMParser();
+    const xmlDoc = parser.parseFromString(data, "text/xml");
+    const danmakuElements = xmlDoc.getElementsByTagName("d");
+    const danmakus = [];
+    for (let i = 0; i < danmakuElements.length; i++) {
+        const element = danmakuElements[i];
+        const p = element.getAttribute("p");
+        const content = element.textContent || "";
+        if (p) {
+            danmakus.push({ p, content });
+        }
+    }
+    return danmakus;
 }

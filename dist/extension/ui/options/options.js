@@ -7,7 +7,8 @@ export const DEFAULT_SETTINGS = {
     userId: null,
     apiBaseUrl: "https://api.deepseek.com",
     apiModel: "deepseek-chat",
-    apiKey: ""
+    apiKey: "",
+    classifyMethod: "api"
 };
 export function normalizeSettings(input) {
     const cacheHoursRaw = Number(input.cacheHours ?? DEFAULT_SETTINGS.cacheHours);
@@ -17,12 +18,17 @@ export function normalizeSettings(input) {
     const apiBaseUrl = String(input.apiBaseUrl ?? DEFAULT_SETTINGS.apiBaseUrl).trim();
     const apiModel = String(input.apiModel ?? DEFAULT_SETTINGS.apiModel).trim();
     const apiKey = String(input.apiKey ?? DEFAULT_SETTINGS.apiKey).trim();
+    const classifyMethodRaw = input.classifyMethod ?? DEFAULT_SETTINGS.classifyMethod;
+    const classifyMethod = classifyMethodRaw === "api" || classifyMethodRaw === "page"
+        ? classifyMethodRaw
+        : DEFAULT_SETTINGS.classifyMethod;
     return {
         cacheHours,
         userId,
         apiBaseUrl,
         apiModel,
-        apiKey
+        apiKey,
+        classifyMethod
     };
 }
 function showStatus(text) {
@@ -48,6 +54,7 @@ export async function initOptions() {
     const statsLink = document.getElementById("open-stats");
     const cacheHoursEl = document.getElementById("cache-hours");
     const userIdEl = document.getElementById("user-id");
+    const classifyMethodEl = document.getElementById("classify-method");
     const apiBaseUrlEl = document.getElementById("api-base-url");
     const apiModelEl = document.getElementById("api-model");
     const apiKeyEl = document.getElementById("api-key");
@@ -57,6 +64,8 @@ export async function initOptions() {
         cacheHoursEl.value = String(settings.cacheHours);
     if (userIdEl && settings.userId)
         userIdEl.value = String(settings.userId);
+    if (classifyMethodEl)
+        classifyMethodEl.value = settings.classifyMethod;
     if (apiBaseUrlEl)
         apiBaseUrlEl.value = settings.apiBaseUrl;
     if (apiModelEl)
@@ -71,6 +80,7 @@ export async function initOptions() {
         const next = normalizeSettings({
             cacheHours: Number(cacheHoursEl?.value ?? DEFAULT_SETTINGS.cacheHours),
             userId: Number(userIdEl?.value ?? DEFAULT_SETTINGS.userId),
+            classifyMethod: classifyMethodEl?.value ?? DEFAULT_SETTINGS.classifyMethod,
             apiBaseUrl: String(apiBaseUrlEl?.value ?? DEFAULT_SETTINGS.apiBaseUrl),
             apiModel: String(apiModelEl?.value ?? DEFAULT_SETTINGS.apiModel),
             apiKey: String(apiKeyEl?.value ?? DEFAULT_SETTINGS.apiKey)
