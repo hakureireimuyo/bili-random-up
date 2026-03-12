@@ -1,19 +1,27 @@
 body {
   margin: 0;
   font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-  background: #f6f7fb;
+  background: linear-gradient(135deg, #93a1dd 0%, #a381c6 100%);
   color: #1f2430;
+  min-height: 100vh;
 }
 
 .app {
   max-width: 1200px;
-  margin: 0 auto;
+  margin: 24px auto;
   padding: 24px;
+  background: #f6f7fb;
+  border-radius: 20px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
 }
 
 .header h1 {
   margin: 0 0 6px 0;
-  font-size: 28px;
+  font-size: 32px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .subtitle {
@@ -30,23 +38,30 @@ body {
 }
 
 .card {
-  background: #ffffff;
-  border-radius: 14px;
-  padding: 16px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 16px;
+  padding: 20px;
   box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
   display: flex;
   flex-direction: column;
   gap: 6px;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(15, 23, 42, 0.12);
 }
 
 .label {
   font-size: 13px;
-  color: #6b7280;
+  color: rgba(255, 255, 255, 0.9);
 }
 
 .value {
-  font-size: 20px;
-  font-weight: 600;
+  font-size: 24px;
+  font-weight: 700;
+  color: #ffffff;
 }
 
 .layout {
@@ -57,9 +72,14 @@ body {
 
 .panel {
   background: #ffffff;
-  border-radius: 14px;
-  padding: 16px;
+  border-radius: 16px;
+  padding: 20px;
   box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
+  transition: box-shadow 0.2s ease;
+}
+
+.panel:hover {
+  box-shadow: 0 6px 20px rgba(15, 23, 42, 0.12);
 }
 
 .panel.full {
@@ -67,8 +87,11 @@ body {
 }
 
 .panel h2 {
-  margin: 0 0 12px 0;
-  font-size: 16px;
+  margin: 0 0 16px 0;
+  font-size: 18px;
+  color: #1f2430;
+  border-bottom: 2px solid #667eea;
+  padding-bottom: 8px;
 }
 
 .list {
@@ -83,10 +106,31 @@ body {
   gap: 12px;
   font-size: 14px;
   color: #374151;
+  padding: 10px 12px;
+  border-radius: 8px;
+  transition: background-color 0.2s ease;
+}
+
+.list-item:hover {
+  background-color: #f3f4f6;
 }
 
 .list-item span:last-child {
   font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.list-item .detail-info {
+  color: #6b7280;
+  font-weight: 400;
+}
+
+.list-item .highlight {
+  color: #667eea;
+  font-weight: 500;
 }
 
 .raw {
@@ -104,5 +148,33 @@ body {
 @media (max-width: 720px) {
   .app {
     padding: 16px;
+    margin: 16px;
+    border-radius: 16px;
+  }
+  
+  .header h1 {
+    font-size: 24px;
+  }
+  
+  .cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .card .value {
+    font-size: 18px;
+  }
+  
+  .panel h2 {
+    font-size: 16px;
+  }
+}
+
+@media (max-width: 480px) {
+  .cards {
+    grid-template-columns: 1fr;
+  }
+  
+  .layout {
+    grid-template-columns: 1fr;
   }
 }

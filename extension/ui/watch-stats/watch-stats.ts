@@ -152,14 +152,55 @@ async function refreshStats(): Promise<void> {
 
   renderList("daily-list", dailyRows);
   const tagTotals: Record<string, number> = {};
+  const tagVideoCounts: Record<string, number> = {};
   for (const [videoKey, tags] of Object.entries(stats.videoTags)) {
     const seconds = stats.videoSeconds[videoKey] ?? 0;
     for (const tag of tags || []) {
       tagTotals[tag] = (tagTotals[tag] ?? 0) + seconds;
+      tagVideoCounts[tag] = (tagVideoCounts[tag] ?? 0) + 1;
     }
   }
 
-  renderList("tag-list", buildTopRows(tagTotals));
+  const tagRows = Object.entries(tagTotals)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10)
+    .map(([tag, seconds]) => ({
+      label: tag,
+      value: seconds,
+      extra: `视频: ${tagVideoCounts[tag] ?? 0}`
+    }));
+  
+  // 自定义渲染标签列表
+  const tagListContainer = document.getElementById("tag-list");
+  if (tagListContainer) {
+    tagListContainer.innerHTML = "";
+    if (tagRows.length === 0) {
+      const item = document.createElement("div");
+      item.className = "list-item";
+      item.textContent = "暂无数据";
+      tagListContainer.appendChild(item);
+    } else {
+      for (const row of tagRows) {
+        const item = document.createElement("div");
+        item.className = "list-item";
+        const label = document.createElement("span");
+        label.textContent = row.label;
+        const valueContainer = document.createElement("span");
+        valueContainer.style.display = "flex";
+        valueContainer.style.gap = "12px";
+        const value = document.createElement("span");
+        value.textContent = formatSeconds(row.value);
+        const extra = document.createElement("span");
+        extra.textContent = row.extra;
+        extra.style.color = "#6b7280";
+        valueContainer.appendChild(value);
+        valueContainer.appendChild(extra);
+        item.appendChild(label);
+        item.appendChild(valueContainer);
+        tagListContainer.appendChild(item);
+      }
+    }
+  }
   renderList("up-list", buildTopRows(stats.upSeconds));
   renderList("video-list", buildTopRows(stats.videoSeconds, stats.videoTitles));
 
@@ -173,23 +214,146 @@ async function refreshStats(): Promise<void> {
     .map((key) => {
       const title = stats.videoTitles[key] ?? key;
       const upId = stats.videoUpIds[key] ?? 0;
-      const tagList = (stats.videoTags[key] ?? []).join(", ");
       const watchCount = stats.videoWatchCount[key] ?? 1;
       const firstWatched = stats.videoFirstWatched[key] ? formatTime(stats.videoFirstWatched[key]) : "-";
+      const avgTime = watchCount > 0 ? (stats.videoSeconds[key] ?? 0) / watchCount : 0;
       return {
-        label: `${title} | ${key}`,
-        value: `${formatSeconds(stats.videoSeconds[key] ?? 0)} | up: ${upId} | tags: ${tagList} | 次数: ${watchCount} | 首次: ${firstWatched}`
+        label: `${title}`,
+        value: {
+          total: formatSeconds(stats.videoSeconds[key] ?? 0),
+          count: watchCount,
+          avg: formatSeconds(avgTime),
+          up: upId,
+          first: firstWatched
+        }
       };
     });
-  renderKeyValueList("video-detail", videoDetailRows);
+  
+  // 自定义渲染视频明细
+  const videoDetailContainer = document.getElementById("video-detail");
+  if (videoDetailContainer) {
+    videoDetailContainer.innerHTML = "";
+    if (videoDetailRows.length === 0) {
+      const item = document.createElement("div");
+      item.className = "list-item";
+      item.textContent = "暂无数据";
+      videoDetailContainer.appendChild(item);
+    } else {
+      for (const row of videoDetailRows) {
+        const item = document.createElement("div");
+        item.className = "list-item";
+        const label = document.createElement("span");
+        label.textContent = row.label;
+        const valueContainer = document.createElement("span");
+        
+        const total = document.createElement("span");
+        total.textContent = `时长: ${row.value.total}`;
+        
+        const count = document.createElement("span");
+        count.className = "highlight";
+        count.textContent = `次数: ${row.value.count}`;
+        
+        const avg = document.createElement("span");
+        avg.className = "detail-info";
+        avg.textContent = `平均: ${row.value.avg}`;
+        
+        const up = document.createElement("span");
+        up.className = "detail-info";
+        up.textContent = `UP: ${row.value.up}`;
+        
+        const first = document.createElement("span");
+        first.className = "detail-info";
+        first.textContent = `首次: ${row.value.first}`;
+        
+        valueContainer.appendChild(total);
+        valueContainer.appendChild(count);
+        valueContainer.appendChild(avg);
+        valueContainer.appendChild(up);
+        valueContainer.appendChild(first);
+        
+        item.appendChild(label);
+        item.appendChild(valueContainer);
+        videoDetailContainer.appendChild(item);
+      }
+    }
+  }
 
+  // 计算每个UP的视频数量
+  const upVideoCounts: Record<string, number> = {};
+  const upTagStats: Record<string, Record<string, number>> = {};
+  
+  for (const [videoKey, upId] of Object.entries(stats.videoUpIds)) {
+    const upKey = String(upId);
+    upVideoCounts[upKey] = (upVideoCounts[upKey] ?? 0) + 1;
+    
+    // 统计UP的标签
+    const tags = stats.videoTags[videoKey] ?? [];
+    const duration = stats.videoSeconds[videoKey] ?? 0;
+    for (const tag of tags) {
+      if (!upTagStats[upKey]) {
+        upTagStats[upKey] = {};
+      }
+      upTagStats[upKey][tag] = (upTagStats[upKey][tag] ?? 0) + duration;
+    }
+  }
+  
   const upDetailRows = Object.keys(stats.upSeconds)
     .sort((a, b) => (stats.upSeconds[b] ?? 0) - (stats.upSeconds[a] ?? 0))
-    .map((key) => ({
-      label: `UP ${key}`,
-      value: formatSeconds(stats.upSeconds[key] ?? 0)
-    }));
-  renderKeyValueList("up-detail", upDetailRows);
+    .map((key) => {
+      const videoCount = upVideoCounts[key] ?? 0;
+      const topTags = Object.entries(upTagStats[key] ?? {})
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3)
+        .map(([tag]) => tag)
+        .join(", ");
+      return {
+        label: `UP ${key}`,
+        value: {
+          total: formatSeconds(stats.upSeconds[key] ?? 0),
+          count: videoCount,
+          tags: topTags || "-"
+        }
+      };
+    });
+  
+  // 自定义渲染UP明细
+  const upDetailContainer = document.getElementById("up-detail");
+  if (upDetailContainer) {
+    upDetailContainer.innerHTML = "";
+    if (upDetailRows.length === 0) {
+      const item = document.createElement("div");
+      item.className = "list-item";
+      item.textContent = "暂无数据";
+      upDetailContainer.appendChild(item);
+    } else {
+      for (const row of upDetailRows) {
+        const item = document.createElement("div");
+        item.className = "list-item";
+        const label = document.createElement("span");
+        label.textContent = row.label;
+        const valueContainer = document.createElement("span");
+        
+        const total = document.createElement("span");
+        total.textContent = `时长: ${row.value.total}`;
+        
+        const count = document.createElement("span");
+        count.className = "highlight";
+        count.textContent = `视频: ${row.value.count}`;
+        
+        const tags = document.createElement("span");
+        tags.className = "detail-info";
+        tags.textContent = `热门标签: ${row.value.tags}`;
+        
+        valueContainer.appendChild(total);
+        valueContainer.appendChild(count);
+        valueContainer.appendChild(tags);
+        
+        item.appendChild(label);
+        item.appendChild(valueContainer);
+        upDetailContainer.appendChild(item);
+      }
+    }
+  }
 }
 
 async function initWatchStats(): Promise<void> {
