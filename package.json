@@ -6,6 +6,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json && node ./scripts/build-extension.js",
     "test": "tsc -p tsconfig.json && node ./scripts/run-tests.js",
+    "test:api": "tsc -p tsconfig.json && node ./tests/api-test.mjs",
     "dev": "npm run build && node -e \"console.log('Load extension from: D:\\\\ProjectFloder\\\\TS\\\\bili-random-up\\\\dist\\\\extension')\"",
     "probe:bili": "node ./scripts/probe-bili-api.js",
     "probe:arcopen": "node ./scripts/probe-arcopen.js",

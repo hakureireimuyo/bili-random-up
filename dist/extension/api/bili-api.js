@@ -24,14 +24,30 @@ export async function rateLimiter(minIntervalMs = DEFAULT_MIN_INTERVAL_MS) {
 /**
  * Unified API request helper.
  */
+import { getValue } from "../storage/storage.js";
+async function getAuthHeaders() {
+    const headers = {
+        "Accept": "application/json, text/plain, */*",
+        "Content-Type": "application/json"
+    };
+    try {
+        const settings = await getValue("settings");
+        if (settings?.biliCookie) {
+            headers["Cookie"] = settings.biliCookie;
+        }
+    }
+    catch (error) {
+        console.error("[API] Failed to get settings:", error);
+    }
+    return headers;
+}
 export async function apiRequest(url, options = {}) {
     const fetchFn = options.fetchFn || fetch;
+    const authHeaders = await getAuthHeaders();
     const fetchInit = {
         credentials: "include",
         mode: "cors",
-        headers: {
-            Accept: "application/json, text/plain, */*"
-        },
+        headers: authHeaders,
         ...(options.fetchInit ?? {})
     };
     try {

@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>B站API测试</title>
+    <link rel="stylesheet" href="./api-test.css" />
+  </head>
+  <body>
+    <div class="app">
+      <div class="header">
+        <div class="icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+          </svg>
+        </div>
+        <h1>B站API测试</h1>
+        <p class="subtitle">测试B站API接口功能</p>
+      </div>
+
+      <div class="content">
+        <div class="section">
+          <h2 class="section-title">测试配置</h2>
+          <div class="form-group">
+            <label class="form-label">
+              <span class="label-text">UP主ID</span>
+              <input id="up-id" type="number" min="1" placeholder="输入要测试的UP主ID" class="form-input" />
+            </label>
+          </div>
+          <div class="form-group">
+            <label class="form-label">
+              <span class="label-text">视频BV号</span>
+              <input id="video-bvid" type="text" placeholder="输入要测试的视频BV号" class="form-input" />
+            </label>
+          </div>
+        </div>
+
+        <div class="section">
+          <h2 class="section-title">测试项目</h2>
+          <button id="test-wbi-keys" class="btn-secondary">
+            测试WBI密钥获取
+          </button>
+          <button id="test-wbi-sign" class="btn-secondary">
+            测试WBI签名生成
+          </button>
+          <button id="test-up-videos" class="btn-secondary">
+            测试获取UP视频
+          </button>
+          <button id="test-video-tags" class="btn-secondary">
+            测试获取视频标签
+          </button>
+          <button id="test-all" class="btn-primary">
+            运行所有测试
+          </button>
+        </div>
+
+        <div class="section">
+          <h2 class="section-title">测试结果</h2>
+          <div id="test-results" class="test-results"></div>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="./api-test.ts"></script>
+  </body>
+</html>

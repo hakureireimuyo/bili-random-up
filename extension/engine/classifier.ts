@@ -36,7 +36,7 @@ interface ClassifierOptions {
   ) => Promise<string[]>;
   existingTags?: string[];
   useAPIMethod?: boolean; // 是否使用API方法获取视频（默认false，使用原有方法）
-  maxVideos?: number; // 使用API方法时的最大视频数（默认30）
+  maxVideos?: number; // 使用API方法时的最大视频数（默认20）
 }
 
 /**
@@ -152,7 +152,7 @@ export async function classifyUP(
   options: ClassifierOptions = {}
 ): Promise<UPTagProfile> {
   const useAPIMethod = options.useAPIMethod ?? false;
-  const maxVideos = options.maxVideos ?? 30;
+  const maxVideos = options.maxVideos ?? 20;
   
   // 根据选项选择使用API方法还是原有方法
   const getUPVideosFn = options.getUPVideosFn ?? 
@@ -169,13 +169,13 @@ export async function classifyUP(
   const videos = await getUPVideosFn(mid);
   const videoCount = videos.length;
   
-  // 如果使用API方法，视频已经包含标签，不需要再次获取
+  // 如果使用API方法且没有提供自定义getUPVideosFn，视频已经包含标签，不需要再次获取
   let collectedTags: string[] = [];
-  if (useAPIMethod) {
+  if (useAPIMethod && !options.getUPVideosFn) {
     // API方法返回的视频已经包含标签
     collectedTags = videos.flatMap(v => v.tags || []);
   } else {
-    // 原有方法需要单独获取标签
+    // 使用自定义getUPVideosFn或原有方法需要单独获取标签
     const sampled = sampleVideos(videos, 5);
     collectedTags = await collectVideoTags(sampled, options);
   }

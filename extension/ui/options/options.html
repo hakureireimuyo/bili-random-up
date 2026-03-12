@@ -46,11 +46,21 @@
             <label class="form-label">
               <span class="label-text">分类数据获取方式</span>
               <select id="classify-method" class="form-input">
-                <option value="api">API方式（推荐）</option>
-                <option value="page">网页抓取方式</option>
+                <option value="page">网页抓取方式（推荐）</option>
+                <option value="api">API方式</option>
               </select>
             </label>
-            <p class="form-hint">API方式更稳定，网页抓取方式作为备选</p>
+            <p class="form-hint">网页抓取方式更稳定，API方式需要配置Cookie</p>
+          </div>
+          <div class="form-group">
+            <label class="form-label">
+              <span class="label-text">B站Cookie</span>
+              <textarea id="bili-cookie" class="form-input" rows="3" placeholder="输入您的B站Cookie"></textarea>
+            </label>
+            <p class="form-hint">
+              用于获取UP视频和标签等数据。
+              <a href="#" id="show-cookie-help" style="color: var(--primary-color);">如何获取Cookie？</a>
+            </p>
           </div>
         </div>
 
@@ -95,6 +105,9 @@
           保存设置
         </button>
         <p id="status" class="status"></p>
+        <p style="margin-top: 10px;">
+          <a id="open-api-test" href="#" style="color: var(--primary-color);">打开API测试页面</a>
+        </p>
       </div>
     </div>
     <script type="module" src="./options.ts"></script>

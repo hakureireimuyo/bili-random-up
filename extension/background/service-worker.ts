@@ -48,6 +48,7 @@ export interface RuntimeManager {
       ) => void
     ) => void;
   };
+  sendMessage: (message: unknown, callback?: (response: unknown) => void) => void;
   getURL?: (path: string) => string;
 }
 
@@ -180,6 +181,14 @@ export async function classifyUpTask(
 
   console.log("[Background] Classify UPs using method:", shouldUseAPIMethod ? "API" : "Page");
 
+  // 发送初始进度（仅API方式）
+  if (shouldUseAPIMethod && typeof chrome !== "undefined" && chrome.runtime) {
+    chrome.runtime.sendMessage({
+      type: "classify_progress",
+      payload: { current: 0, total: list.length, text: "准备中..." }
+    });
+  }
+
   for (let i = 0; i < batch.length; i += batchSize) {
     const chunk = batch.slice(i, i + batchSize);
     for (const up of chunk) {
@@ -204,6 +213,18 @@ export async function classifyUpTask(
       upTags[String(up.mid)] = profile.tags;
       videoCounts[String(up.mid)] = profile.videoCount ?? 0;
       processed += 1;
+
+      // 发送进度更新（仅API方式）
+      if (shouldUseAPIMethod && typeof chrome !== "undefined" && chrome.runtime) {
+        chrome.runtime.sendMessage({
+          type: "classify_progress",
+          payload: {
+            current: processed,
+            total: list.length,
+            text: `正在分类: ${up.mid}`
+          }
+        });
+      }
     }
   }
 
@@ -211,6 +232,12 @@ export async function classifyUpTask(
   await setValueFn("videoCounts", videoCounts);
   await setValueFn("classifyStatus", { lastUpdate: Date.now() });
   console.log("[Background] Classified UPs", processed);
+  
+  // 发送完成消息（仅API方式）
+  if (shouldUseAPIMethod && typeof chrome !== "undefined" && chrome.runtime) {
+    chrome.runtime.sendMessage({ type: "classify_complete" });
+  }
+  
   return processed;
 }
 
@@ -645,12 +672,34 @@ export async function handleMessage(
   }
 
   if (message.type === "classify_ups") {
-    await classifyUpTask(options);
+    // 从设置中读取classifyMethod
+    const settings = (await getValueFn("settings")) as { classifyMethod?: "api" | "page" } | null;
+    const classifyMethod = settings?.classifyMethod ?? "api";
+    
+    if (classifyMethod === "api") {
+      // API方式：直接在后台默默抓取
+      console.log("[Background] Using API method for classification");
+      await classifyUpTask(options);
+    } else {
+      // 网页抓取方式：打开UP主页
+      console.log("[Background] Using page scraping method for classification");
+      await startAutoClassification(options);
+    }
     return null;
   }
 
   if (message.type === "start_auto_classification") {
-    await startAutoClassification(options);
+    // 此消息保留用于兼容性，但会根据设置自动选择方式
+    const settings = (await getValueFn("settings")) as { classifyMethod?: "api" | "page" } | null;
+    const classifyMethod = settings?.classifyMethod ?? "api";
+    
+    if (classifyMethod === "api") {
+      console.log("[Background] Using API method for auto classification");
+      await classifyUpTask(options);
+    } else {
+      console.log("[Background] Using page scraping method for auto classification");
+      await startAutoClassification(options);
+    }
     return null;
   }
 

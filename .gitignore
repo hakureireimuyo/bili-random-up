@@ -22,6 +22,9 @@ build/
 .env.local
 .env.*.local
 
+# B站认证配置（包含敏感信息）
+extension/api/bili-config.ts
+
 # Logs
 logs/
 *.log

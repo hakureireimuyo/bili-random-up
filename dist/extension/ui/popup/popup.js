@@ -70,6 +70,83 @@ async function handleUpdateUpList() {
         alert("更新失败，请稍后重试");
     }
 }
+// 进度条相关
+let progressInterval = null;
+function showProgress() {
+    const section = document.getElementById("classify-progress-section");
+    if (section) {
+        section.style.display = "block";
+    }
+}
+function hideProgress() {
+    const section = document.getElementById("classify-progress-section");
+    if (section) {
+        section.style.display = "none";
+    }
+    if (progressInterval !== null) {
+        clearInterval(progressInterval);
+        progressInterval = null;
+    }
+}
+function updateProgress(current, total, text) {
+    const progressText = document.getElementById("progress-text");
+    const progressCount = document.getElementById("progress-count");
+    const progressFill = document.getElementById("progress-fill");
+    if (progressText)
+        progressText.textContent = text;
+    if (progressCount)
+        progressCount.textContent = `${current}/${total}`;
+    if (progressFill) {
+        const percentage = total > 0 ? (current / total) * 100 : 0;
+        progressFill.style.width = `${percentage}%`;
+    }
+}
+async function handleAutoClassify() {
+    if (typeof chrome === "undefined") {
+        console.log("[Popup] Auto classify");
+        return;
+    }
+    try {
+        // 检查使用哪种分类方式
+        const settings = await getValue("settings");
+        const useAPIMethod = settings?.classifyMethod === "api";
+        if (useAPIMethod) {
+            // API方式：显示进度条
+            showProgress();
+            updateProgress(0, 0, "准备中...");
+            // 监听进度更新
+            const listener = (message) => {
+                const msg = message;
+                if (msg.type === "classify_progress") {
+                    const payload = msg.payload;
+                    updateProgress(payload.current, payload.total, payload.text);
+                }
+                else if (msg.type === "classify_complete") {
+                    hideProgress();
+                    alert("分类完成！");
+                    void loadStatus();
+                }
+            };
+            chrome.runtime.onMessage.addListener(listener);
+            // 发送开始分类消息
+            await sendActionWithResponse("classify_ups");
+            // 设置超时，5分钟后自动隐藏进度条
+            setTimeout(() => {
+                hideProgress();
+                chrome.runtime.onMessage.removeListener(listener);
+            }, 5 * 60 * 1000);
+        }
+        else {
+            // 网页抓取方式：不显示进度条，直接开始
+            await sendActionWithResponse("start_auto_classification");
+        }
+    }
+    catch (error) {
+        console.error("[Popup] Auto classify error", error);
+        hideProgress();
+        alert("分类失败，请稍后重试");
+    }
+}
 function sendActionWithResponse(type) {
     if (typeof chrome === "undefined") {
         return Promise.resolve(null);
@@ -147,7 +224,7 @@ export function initPopup() {
     const statsBtn = document.getElementById("btn-stats");
     const settingsBtn = document.getElementById("btn-settings");
     updateUpBtn?.addEventListener("click", () => void handleUpdateUpList());
-    autoClassifyBtn?.addEventListener("click", () => sendAction("start_auto_classification"));
+    autoClassifyBtn?.addEventListener("click", () => void handleAutoClassify());
     randomUpBtn?.addEventListener("click", () => void jumpToRandomUP());
     statsBtn?.addEventListener("click", () => {
         if (typeof chrome !== "undefined") {

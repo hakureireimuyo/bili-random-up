@@ -100,7 +100,7 @@ function limitTags(tags, max = 5) {
  */
 export async function classifyUP(mid, options = {}) {
     const useAPIMethod = options.useAPIMethod ?? false;
-    const maxVideos = options.maxVideos ?? 30;
+    const maxVideos = options.maxVideos ?? 20;
     // 根据选项选择使用API方法还是原有方法
     const getUPVideosFn = options.getUPVideosFn ??
         (useAPIMethod
@@ -112,14 +112,14 @@ export async function classifyUP(mid, options = {}) {
     console.log("[Classifier] Classify UP", mid, "Method:", useAPIMethod ? "API" : "Original");
     const videos = await getUPVideosFn(mid);
     const videoCount = videos.length;
-    // 如果使用API方法，视频已经包含标签，不需要再次获取
+    // 如果使用API方法且没有提供自定义getUPVideosFn，视频已经包含标签，不需要再次获取
     let collectedTags = [];
-    if (useAPIMethod) {
+    if (useAPIMethod && !options.getUPVideosFn) {
         // API方法返回的视频已经包含标签
         collectedTags = videos.flatMap(v => v.tags || []);
     }
     else {
-        // 原有方法需要单独获取标签
+        // 使用自定义getUPVideosFn或原有方法需要单独获取标签
         const sampled = sampleVideos(videos, 5);
         collectedTags = await collectVideoTags(sampled, options);
     }

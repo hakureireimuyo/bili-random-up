@@ -220,3 +220,41 @@ button i {
   background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
   transition: width 0.3s ease;
 }
+
+.progress-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.progress-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  color: #495057;
+}
+
+#progress-text {
+  font-weight: 500;
+}
+
+#progress-count {
+  font-weight: 600;
+  color: #667eea;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 24px;
+  background: #e9ecef;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #fb7299 0%, #e85d8a 100%);
+  transition: width 0.3s ease;
+  border-radius: 12px;
+}
