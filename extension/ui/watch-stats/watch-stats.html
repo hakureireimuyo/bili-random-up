@@ -13,34 +13,31 @@
         <p class="subtitle">基于播放器进度的真实观看时长统计</p>
       </header>
 
-      <section class="cards">
-        <div class="card">
-          <span class="label">总观看时长</span>
-          <span id="stat-total" class="value">-</span>
-        </div>
-        <div class="card">
-          <span class="label">今日观看时长</span>
-          <span id="stat-today" class="value">-</span>
-        </div>
-        <div class="card">
-          <span class="label">近7天观看时长</span>
-          <span id="stat-7days" class="value">-</span>
-        </div>
-        <div class="card">
-          <span class="label">统计更新时间</span>
-          <span id="stat-update" class="value">-</span>
-        </div>
-      </section>
-
       <div class="layout">
         <section class="panel">
-          <h2>近7天</h2>
-          <div id="daily-list" class="list"></div>
+          <h2>月度热力图</h2>
+          <div id="heatmap-container" class="heatmap-container"></div>
+          <h2 class="chart-title">近7天趋势</h2>
+          <canvas id="line-chart" class="line-chart"></canvas>
         </section>
 
-        <section class="panel">
-          <h2>标签时长 Top 10</h2>
-          <div id="tag-list" class="list"></div>
+        <section class="panel stats-panel">
+          <div class="card">
+            <span class="label">总观看时长</span>
+            <span id="stat-total" class="value">-</span>
+          </div>
+          <div class="card">
+            <span class="label">今日观看时长</span>
+            <span id="stat-today" class="value">-</span>
+          </div>
+          <div class="card">
+            <span class="label">近7天观看时长</span>
+            <span id="stat-7days" class="value">-</span>
+          </div>
+          <div class="card">
+            <span class="label">统计更新时间</span>
+            <span id="stat-update" class="value">-</span>
+          </div>
         </section>
 
         <section class="panel">
@@ -53,17 +50,22 @@
           <div id="video-list" class="list"></div>
         </section>
 
-        <section class="panel full">
-          <h2>视频明细</h2>
-          <div id="video-detail" class="list"></div>
-        </section>
-
-        <section class="panel full">
-          <h2>UP 明细</h2>
-          <div id="up-detail" class="list"></div>
+        <section class="panel full search-panel">
+          <div class="search-layout">
+            <div class="search-left">
+              <h2>视频搜索</h2>
+              <input type="text" id="video-search" class="search-input" placeholder="搜索视频标题...">
+              <div id="video-search-results" class="list"></div>
+            </div>
+            <div class="search-right">
+              <h2>标签搜索</h2>
+              <input type="text" id="tag-search" class="search-input" placeholder="搜索标签...">
+              <div id="tag-search-results" class="list"></div>
+            </div>
+          </div>
         </section>
       </div>
     </div>
-    <script type="module" src="./watch-stats.js"></script>
+    <script type="module" src="./index.js"></script>
   </body>
 </html>
