@@ -117,6 +117,19 @@ interface VideoMeta {
 }
 
 function extractVideoMeta(): VideoMeta {
+  // 检查页面是否加载完成
+  if (document.readyState !== 'complete') {
+    console.log("[Tracker] Page not fully loaded, waiting...");
+    // 返回空对象，稍后会重试
+    return {
+      title: "",
+      upMid: undefined,
+      upName: undefined,
+      upFace: undefined,
+      tags: []
+    };
+  }
+
   const titleSelectors = [
     "h1.video-title",
     "h1.title",
@@ -141,6 +154,11 @@ function extractVideoMeta(): VideoMeta {
   const win = window as unknown as {
     __INITIAL_STATE__?: { videoData?: { owner?: { mid?: number; name?: string; face?: string } }; tags?: Array<{ tag_name?: string }> };
   };
+  console.log("[Tracker] __INITIAL_STATE__ exists:", !!win.__INITIAL_STATE__);
+  console.log("[Tracker] __INITIAL_STATE__.videoData exists:", !!win.__INITIAL_STATE__?.videoData);
+  console.log("[Tracker] __INITIAL_STATE__.videoData.owner exists:", !!win.__INITIAL_STATE__?.videoData?.owner);
+  console.log("[Tracker] __INITIAL_STATE__.videoData.owner:", win.__INITIAL_STATE__?.videoData?.owner);
+
   const stateMid = win.__INITIAL_STATE__?.videoData?.owner?.mid;
   if (typeof stateMid === "number") {
     upMid = stateMid;
@@ -174,14 +192,82 @@ function extractVideoMeta(): VideoMeta {
   
   // 提取UP头像
   let upFace: string | undefined = undefined;
+  console.log("[Tracker] Extracting UP face, videoDataOwner.face:", videoDataOwner?.face);
+
   if (videoDataOwner?.face) {
     upFace = videoDataOwner.face;
+    console.log("[Tracker] UP face from __INITIAL_STATE__:", upFace);
   } else {
     // 如果从__INITIAL_STATE__中获取不到，尝试从页面中提取
-    const upFaceElement = document.querySelector('.up-avatar, .author-avatar, [class*="avatar"], [class*="up-face"], img[src*="bili"]');
-    if (upFaceElement) {
-      upFace = (upFaceElement as HTMLImageElement).src;
+    // 尝试多个选择器来查找头像元素
+    const selectors = [
+      '.bili-avatar', 
+      'bili-avatar-img bili-avatar-face bili-avatar-img-radius'
+    ];
+
+    // 首先尝试使用XPath查找头像
+    console.log("[Tracker] Trying to find avatar with XPath");
+    try {
+      const xpathResult = document.evaluate(
+        '/html/body/div[2]/div[2]/div[2]/div/div[1]/div[1]/div[1]/div/a/div/img',
+        document,
+        null,
+        XPathResult.FIRST_ORDERED_NODE_TYPE,
+        null
+      );
+      const imgElement = xpathResult.singleNodeValue as HTMLImageElement | null;
+      if (imgElement) {
+        upFace = imgElement.src;
+        console.log("[Tracker] UP face from XPath:", upFace);
+        // 确保URL包含协议部分
+        if (upFace && upFace.startsWith('//')) {
+          upFace = 'https:' + upFace;
+          console.log("[Tracker] UP face after adding protocol:", upFace);
+        }
+      } else {
+        console.log("[Tracker] XPath did not find avatar element");
+      }
+    } catch (error) {
+      console.error("[Tracker] Error finding avatar with XPath:", error);
     }
+
+    // 如果XPath没有找到，尝试CSS选择器
+    if (!upFace) {
+      console.log("[Tracker] XPath failed, trying CSS selectors");
+      for (const selector of selectors) {
+        console.log("[Tracker] Trying selector:", selector);
+        const element = document.querySelector(selector) as HTMLImageElement | null;
+        if (element) {
+          console.log("[Tracker] Found element with selector:", selector, "Tag:", element.tagName);
+
+          // 如果找到的是img元素，直接获取src
+          if (element.tagName === 'IMG') {
+            upFace = element.src;
+            console.log("[Tracker] UP face from img element:", upFace);
+          } else {
+            // 如果找到的是容器元素，查找内部的img
+            const img = element.querySelector('img') as HTMLImageElement | null;
+            if (img) {
+              upFace = img.src;
+              console.log("[Tracker] UP face from container img:", upFace);
+            }
+          }
+
+          // 确保URL包含协议部分
+          if (upFace && upFace.startsWith('//')) {
+            upFace = 'https:' + upFace;
+            console.log("[Tracker] UP face after adding protocol:", upFace);
+          }
+
+          // 如果找到了头像，就不再尝试其他选择器
+          if (upFace) {
+            break;
+          }
+        }
+      }
+    }
+
+    console.log("[Tracker] Final UP face value:", upFace);
   }
   const tagElements = document.querySelectorAll('a[href*="/tag/"], a[href*="search?keyword="], .tag-link, .tag-item');
   for (const el of Array.from(tagElements)) {
@@ -206,6 +292,11 @@ function trackVideoPlayback(
 
   const refreshMeta = () => {
     cachedMeta = extractVideoMeta();
+    // 如果页面未加载完成，设置定时器稍后重试
+    if (!cachedMeta.title && document.readyState !== 'complete') {
+      console.log("[Tracker] Page not loaded, scheduling retry...");
+      setTimeout(refreshMeta, 1000);
+    }
   };
 
   const flush = (reason: string) => {
@@ -214,6 +305,13 @@ function trackVideoPlayback(
     }
     // 只在初始化时提取一次元数据，避免重复查询DOM
     const meta = cachedMeta ?? extractVideoMeta();
+
+    // 如果元数据不完整（页面未加载完成），跳过本次发送
+    if (!meta.title) {
+      console.log("[Tracker] Meta incomplete, skipping flush:", meta);
+      return;
+    }
+
     const event: WatchProgress = {
       bvid,
       title: meta.title,
@@ -234,7 +332,14 @@ function trackVideoPlayback(
   refreshMeta();
   
   // 初始化视频信息、UP信息和标签（只执行一次）
-  if (cachedMeta) {
+  // 等待页面加载完成后再初始化
+  const initializeWhenReady = () => {
+    if (!cachedMeta || !cachedMeta.title) {
+      console.log("[Tracker] Meta not ready, waiting...");
+      setTimeout(initializeWhenReady, 500);
+      return;
+    }
+
     const meta: VideoMeta = cachedMeta;
     const initEvent: WatchProgress = {
       bvid,
@@ -260,7 +365,10 @@ function trackVideoPlayback(
     if (meta.tags && meta.tags.length > 0) {
       sendProcessVideoTags(initEvent);
     }
-  }
+  };
+
+  // 开始初始化流程
+  initializeWhenReady();
 
   video.addEventListener("timeupdate", () => {
     if (video.seeking) {
