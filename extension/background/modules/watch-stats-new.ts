@@ -1,4 +1,4 @@
-import { getValue, setValue } from "../../storage/storage.js";
+import { getValue, setValue } from "../../storage/storage-indexeddb.js";
 import type { BackgroundOptions, WatchProgressPayload, WatchStats } from "./common-types.js";
 
 function toLocalDateKey(timestamp: number): string {

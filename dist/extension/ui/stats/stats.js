@@ -1,7 +1,7 @@
 /**
  * Stats page main entry point.
  */
-import { getValue, setValue, getFollowedUPList, getTagById, getCategoryLibrary } from "../../storage/storage.js";
+import { getValue, getFollowedUPList, getUPManualTags, setUPManualTags, getTagLibrary, getTagById, getTagIdByName, getCategoryLibrary, addTagsToLibrary } from "../../storage/storage.js";
 import { setText, countVideoTotals, countUpTags, colorFromTag } from "./utils.js";
 import { getDragContext, setDragContext } from "./drag-drop.js";
 import { renderTags, renderAutoTagPill, addCustomTag, setCurrentCustomTags } from "./tags.js";
@@ -198,9 +198,18 @@ async function addTagToUp(mid, tag) {
     const existing = currentUpTags[key] ?? [];
     if (existing.includes(nextTag))
         return;
+    // 添加标签到标签库
+    const addedTag = await addTagsToLibrary([nextTag]);
+    const tagId = addedTag[0]?.id;
+    if (!tagId)
+        return;
+    // 更新UP的手动标签
+    const existingTagIds = await getUPManualTags(mid);
+    if (!existingTagIds.includes(tagId)) {
+        await setUPManualTags(mid, [...existingTagIds, tagId]);
+    }
     const next = [...existing, nextTag];
     currentUpTags = { ...currentUpTags, [key]: next };
-    await setValue("upTags", currentUpTags);
     await renderUpList(currentUpList, currentUpTags);
     await renderTags(currentUpTags, document.getElementById("tag-search")?.value ?? "");
 }
@@ -212,9 +221,16 @@ async function removeTagFromUp(mid, tag) {
     const existing = currentUpTags[key] ?? [];
     if (!existing.includes(tag))
         return;
+    // 从标签库中获取标签ID
+    const tagId = await getTagIdByName(tag);
+    if (!tagId)
+        return;
+    // 从UP的手动标签中移除
+    const existingTagIds = await getUPManualTags(mid);
+    const nextTagIds = existingTagIds.filter(id => id !== tagId);
+    await setUPManualTags(mid, nextTagIds);
     const next = existing.filter((t) => t !== tag);
     currentUpTags = { ...currentUpTags, [key]: next };
-    await setValue("upTags", currentUpTags);
     await renderUpList(currentUpList, currentUpTags);
     await renderTags(currentUpTags, document.getElementById("tag-search")?.value ?? "");
 }
@@ -460,7 +476,7 @@ export async function initStats() {
     });
     // 获取已关注的UP列表
     const followedUPs = await getFollowedUPList();
-    const upTags = (await getValue("upTags")) ?? {};
+    const tagLibrary = await getTagLibrary();
     const customTags = (await getValue("customTags")) ?? [];
     const videoCounts = (await getValue("videoCounts")) ?? {};
     // 加载分类库
@@ -469,6 +485,14 @@ export async function initStats() {
     // 设置当前UP列表和缓存
     currentUpList = followedUPs;
     upCache = { upList: followedUPs };
+    // 从标签库和UP手动标签构建currentUpTags
+    const upTags = {};
+    for (const up of followedUPs) {
+        const manualTagIds = await getUPManualTags(up.mid);
+        upTags[String(up.mid)] = manualTagIds
+            .map(tagId => tagLibrary[tagId]?.name)
+            .filter((name) => name !== undefined);
+    }
     currentUpTags = upTags;
     setCurrentCustomTags(customTags);
     // 加载UP标签权重缓存

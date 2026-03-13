@@ -73,7 +73,7 @@ export async function rateLimiter(
 /**
  * Unified API request helper.
  */
-import { getValue } from "../storage/storage.js";
+import { getValue } from "../storage/storage-indexeddb.js";
 
 async function getAuthHeaders(): Promise<Record<string, string>> {
   const headers: Record<string, string> = {

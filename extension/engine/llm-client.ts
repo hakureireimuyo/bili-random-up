@@ -2,7 +2,7 @@
  * OpenAI-compatible LLM client (for DeepSeek or similar providers).
  */
 
-import { getValue } from "../storage/storage.js";
+import { getValue } from "../storage/storage-indexeddb.js";
 
 export interface ChatMessage {
   role: "system" | "user" | "assistant";

@@ -1,8 +1,7 @@
 import { getFollowedUPs, getUPInfo, getUPVideos, getVideoTags } from "../../api/bili-api.js";
 import { classifyUP } from "../../engine/classifier.js";
 import { randomUP, randomVideo, recommendUP, recommendVideo, updateInterestFromWatch } from "../../engine/recommender.js";
-import { saveUPList } from "../../storage/storage.js";
-import type { StorageProvider } from "../../storage/storage.js";
+import { saveUPList } from "../../storage/storage-indexeddb.js";
 
 export const ALARM_UPDATE_UP_LIST = "update_up_list";
 export const ALARM_CLASSIFY_UPS = "classify_ups";
@@ -75,7 +74,6 @@ export interface BackgroundOptions {
   classifyWithPageDataFn?: (mid: number, pageData: any, existingTags: string[]) => Promise<string[]>;
   useAPIMethod?: boolean;
   maxVideos?: number;
-  storage?: StorageProvider;
 }
 
 export interface WatchProgressPayload {

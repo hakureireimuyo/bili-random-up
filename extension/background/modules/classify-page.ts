@@ -306,7 +306,7 @@ async function processNextClassification(options: BackgroundOptions = {}): Promi
     const setValueFn = options.setValueFn ?? ((key: string, value: unknown) => setValue(key, value));
 
     // 获取UP的手动标签
-    const existingTagIds = await getUPManualTags(mid, { storage: options.storage });
+    const existingTagIds = await getUPManualTags(mid);
 
     console.log("[Background] Existing manual tags for UP", mid, ":", existingTagIds);
 
@@ -327,11 +327,11 @@ async function processNextClassification(options: BackgroundOptions = {}): Promi
     console.log("[Background] LLM classified tags for UP", mid, ":", tagNames);
     
     // 将标签名称添加到标签库，获取标签ID
-    const addedTags = await addTagsToLibrary(tagNames, { storage: options.storage });
+    const addedTags = await addTagsToLibrary(tagNames);
     const tagIds = addedTags.map(tag => tag.id);
     
     // 保存UP的手动标签
-    await setUPManualTags(mid, tagIds, { storage: options.storage });
+    await setUPManualTags(mid, tagIds);
     
     console.log("[Background] ✓ Successfully classified UP", mid, "with tags:", tagNames, "tagIds:", tagIds);
     const remaining =
@@ -363,7 +363,7 @@ export async function startAutoClassification(options: BackgroundOptions = {}): 
   console.log("[Background] ===== Starting auto classification =====");
 
   // 获取已关注的UP列表
-  const followedUPs = await getFollowedUPList({ storage: options.storage });
+  const followedUPs = await getFollowedUPList();
 
 
   console.log("[Background] Loaded followed UP list:", followedUPs.length, "UPs");
@@ -385,7 +385,7 @@ export async function startAutoClassification(options: BackgroundOptions = {}): 
   // 筛选出没有手动标签的已关注UP
   const upsWithoutTags = [];
   for (const up of followedUPs) {
-    const existingTagIds = await getUPManualTags(up.mid, { storage: options.storage });
+    const existingTagIds = await getUPManualTags(up.mid);
     if (existingTagIds.length === 0) {
       upsWithoutTags.push(up);
       console.log("[Background] UP", up.mid, "has no manual tags, will classify");
