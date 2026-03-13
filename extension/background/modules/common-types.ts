@@ -1,7 +1,7 @@
 import { getFollowedUPs, getUPInfo, getUPVideos, getVideoTags } from "../../api/bili-api.js";
 import { classifyUP } from "../../engine/classifier.js";
 import { randomUP, randomVideo, recommendUP, recommendVideo, updateInterestFromWatch } from "../../engine/recommender.js";
-import { saveUPList } from "../../storage/storage-indexeddb.js";
+import { saveUPList } from "../../storage/storage.js";
 
 export const ALARM_UPDATE_UP_LIST = "update_up_list";
 export const ALARM_CLASSIFY_UPS = "classify_ups";

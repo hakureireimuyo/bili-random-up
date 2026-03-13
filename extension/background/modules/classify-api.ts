@@ -1,6 +1,6 @@
 import { getUPInfo, getUPVideos, getUPVideosForClassification, getVideoTags } from "../../api/bili-api.js";
 import { classifyUP } from "../../engine/classifier.js";
-import { getValue, setValue, addTagsToLibrary, getUPManualTags, setUPManualTags, getTagLibrary } from "../../storage/storage-indexeddb.js";
+import { getValue, setValue, addTagsToLibrary, getUPManualTags, setUPManualTags, getTagLibrary, loadUPList } from "../../storage/storage.js";
 import type { BackgroundOptions } from "./common-types.js";
 import { proxyApiRequest } from "./proxy.js";
 
@@ -18,7 +18,7 @@ export async function classifyUpTask(
   const classifyMethod = settings?.classifyMethod ?? "api";
   const shouldUseAPIMethod = useAPIMethod || classifyMethod === "api";
 
-  const cache = (await getValueFn("upList")) as { upList?: { mid: number }[] } | null;
+  const cache = await loadUPList();
   const list = cache?.upList ?? [];
   if (list.length === 0) {
     console.log("[Background] No UPs to classify");

@@ -3,6 +3,7 @@ import {
   getValue, 
   saveUPList, 
   updateUPFollowStatus,
+  loadUPList,
   type UP 
 } from "../../storage/storage.js";
 import type { BackgroundOptions } from "./common-types.js";
@@ -29,7 +30,7 @@ export async function updateUpListTask(
   }
 
   // 获取本地已有的UP列表
-  const existingCache = (await getValueFn("upList")) as { upList?: UP[] } | null;
+  const existingCache = await loadUPList();
   const existingUPs = existingCache?.upList ?? [];
 
   try {

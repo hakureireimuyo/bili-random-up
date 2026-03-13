@@ -1,7 +1,7 @@
 /**
  * Popup UI logic.
  */
-import { getValue } from "../../storage/storage.js";
+import { getValue, loadUPList } from "../../storage/storage.js";
 export function sortInterests(profile) {
     return Object.values(profile)
         .map((item) => ({ tag: item.tag, score: item.score, ratio: 0 }))
@@ -204,7 +204,7 @@ async function loadStatus() {
     const upUpdateEl = document.getElementById("status-up-update");
     const classifyEl = document.getElementById("status-classify-update");
     const settings = (await getValue("settings")) ?? {};
-    const upCache = (await getValue("upList")) ?? null;
+    const upCache = await loadUPList();
     const classifyCache = (await getValue("classifyStatus")) ?? null;
     if (userIdEl) {
         userIdEl.textContent = settings.userId ? String(settings.userId) : "-";
@@ -217,7 +217,7 @@ async function loadStatus() {
     }
 }
 async function jumpToRandomUP() {
-    const upCache = (await getValue("upList")) ?? null;
+    const upCache = await loadUPList();
     if (!upCache || !upCache.upList || upCache.upList.length === 0) {
         alert("没有已关注的UP主数据，请先更新关注列表");
         return;

@@ -118,7 +118,7 @@ export async function handleMessage(
   }
 
   if (message.type === "random_up") {
-    const cache = (await getValueFn("upList")) as { upList?: UP[] } | null;
+    const cache = await loadUPList();
     const upList = cache?.upList ?? [];
     const up = randomUPFn(upList);
     if (up) {
@@ -136,7 +136,7 @@ export async function handleMessage(
   }
 
   if (message.type === "random_video") {
-    const cache = (await getValueFn("upList")) as { upList?: UP[] } | null;
+    const cache = await loadUPList();
     const upList = cache?.upList ?? [];
     const up = randomUPFn(upList);
     if (!up) return;
@@ -158,8 +158,8 @@ export async function handleMessage(
   }
 
   if (message.type === "update_up_list") {
-    await updateUpListTask(options);
-    return null;
+    const result = await updateUpListTask(options);
+    return result;
   }
 
   if (message.type === "classify_ups") {

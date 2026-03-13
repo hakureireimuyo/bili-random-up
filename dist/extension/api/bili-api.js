@@ -83,8 +83,7 @@ export async function getFollowedUPs(uid, options = {}, existingUPs) {
     const existingSet = new Set(existingUPs?.map(up => up.mid) || []);
     const existingUPMap = new Map(existingUPs?.map(up => [up.mid, up]) || []);
     let page = 1;
-    let consecutiveAllExistCount = 0;
-    const maxConsecutiveAllExist = 3; // 连续3页都全部存在则停止拉取
+    const existingInBatchThreshold = 10; // 批次中存在10个已存储的UP时停止拉取
     let isIncremental = false; // 是否为增量更新
     while (true) {
         const url = `https://api.bilibili.com/x/relation/followings?vmid=${uid}&pn=${page}&ps=${pageSize}&order=desc`;
@@ -105,24 +104,13 @@ export async function getFollowedUPs(uid, options = {}, existingUPs) {
             sign: item.sign || item.usign || "",
             follow_time: item.mtime || item.follow_time || 0
         }));
-        // 判断是否为增量更新：当前批次中至少3个已关注的UP
+        // 判断是否为增量更新：当前批次中至少10个已关注的UP
         const existingInBatch = upList.filter(up => existingSet.has(up.mid)).length;
-        if (existingInBatch >= 3) {
+        if (existingInBatch >= existingInBatchThreshold) {
             isIncremental = true;
-            console.log(`[API] Page ${page}: Detected incremental update (${existingInBatch} existing UPs in batch)`);
-        }
-        // Check if all UPs in this page already exist
-        const allExist = upList.every(up => existingSet.has(up.mid));
-        if (allExist) {
-            consecutiveAllExistCount++;
-            console.log(`[API] Page ${page}: All ${upList.length} UPs already exist`);
-            if (consecutiveAllExistCount >= maxConsecutiveAllExist) {
-                console.log(`[API] Stopping after ${maxConsecutiveAllExist} consecutive pages with all existing UPs`);
-                break;
-            }
-        }
-        else {
-            consecutiveAllExistCount = 0;
+            console.log(`[API] Page ${page}: Detected incremental update (${existingInBatch} existing UPs in batch, threshold=${existingInBatchThreshold})`);
+            // 如果是增量更新且当前批次中有足够多的已存在UP，停止拉取
+            break;
         }
         all.push(...upList);
         if (list.length < pageSize) {

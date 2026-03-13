@@ -2,7 +2,7 @@
  * Popup UI logic.
  */
 
-import { getValue } from "../../storage/storage.js";
+import { getValue, loadUPList } from "../../storage/storage.js";
 
 export interface InterestProfile {
   [tag: string]: { tag: string; score: number };
@@ -268,7 +268,7 @@ async function loadStatus(): Promise<void> {
   const classifyEl = document.getElementById("status-classify-update");
 
   const settings = (await getValue<{ userId?: number }>("settings")) ?? {};
-  const upCache = (await getValue<UPCache>("upList")) ?? null;
+  const upCache = await loadUPList();
   const classifyCache = (await getValue<ClassifyCache>("classifyStatus")) ?? null;
 
   if (userIdEl) {
@@ -283,7 +283,7 @@ async function loadStatus(): Promise<void> {
 }
 
 async function jumpToRandomUP(): Promise<void> {
-  const upCache = (await getValue<UPCache>("upList")) ?? null;
+  const upCache = await loadUPList();
   if (!upCache || !upCache.upList || upCache.upList.length === 0) {
     alert("没有已关注的UP主数据，请先更新关注列表");
     return;

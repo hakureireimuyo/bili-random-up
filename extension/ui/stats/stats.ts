@@ -1,63 +1,27 @@
 /**
- * Stats page main entry point.
+ * Stats page logic.
  */
 
-import {
-  getValue,
-  setValue,
-  getFollowedUPList,
-  getUPTagWeights,
-  getUPManualTags,
-  setUPManualTags,
-  getTagLibrary,
-  getTagById,
-  getTagIdByName,
-  getCategoryLibrary,
-  addTagsToLibrary,
-  type UPTagWeights,
-  type Tag,
-  type Category,
-  type UPTagWeightsCache,
-  type TagLibrary
-} from "../../storage/storage.js";
+import { getValue, setValue, getUPTagCounts, type UPTagCache } from "../../storage/storage.js";
 
-import {
-  setText,
-  countVideoTotals,
-  countUpTags,
-  buildInterestRows,
-  colorFromTag
-} from "./utils.js";
+export interface InterestProfile {
+  [tag: string]: { tag: string; score: number };
+}
 
-import {
-  getDragContext,
-  setDragContext
-} from "./drag-drop.js";
+export interface UPCache {
+  upList: { mid: number; name: string; face: string }[];
+}
 
-import {
-  renderTags,
-  renderTagPill,
-  renderAutoTagPill,
-  addCustomTag,
-  getCurrentCustomTags,
-  setCurrentCustomTags,
-  getAllTagCounts,
-  setAllTagCounts
-} from "./tags.js";
+export interface UPTagCount {
+  tag: string;
+  count: number;
+}
 
-import {
-  renderCategories,
-  addTagToCategory,
-  removeTagFromCategory,
-  addCategory,
-  removeCategory,
-  getCategories,
-  setCategories
-} from "./categories.js";
-
-import { createDragGhost, removeDragGhost } from "./drag-drop.js";
-
-import type { InterestProfile, UPCache, DragContext } from "./types.js";
+export interface Category {
+  id: string;
+  name: string;
+  tags: string[];
+}
 
 declare const chrome: {
   runtime: {
@@ -65,58 +29,372 @@ declare const chrome: {
   };
 };
 
-// Global state
-let upCache: UPCache = { upList: [] };
-let currentUpList: UPCache["upList"] = [];
-let currentUpTags: Record<string, string[]> = {};
-let upTagCache: UPTagWeightsCache = {};
+function setText(id: string, value: string): void {
+  const el = document.getElementById(id);
+  if (el) {
+    el.textContent = value;
+  }
+}
+
+export function countVideoTotals(counts: Record<string, number>): number {
+  return Object.values(counts).reduce((total, value) => total + (value ?? 0), 0);
+}
+
+export function countUpTags(upTags: Record<string, string[]>): number {
+  return Object.values(upTags).reduce((total, tags) => total + (tags?.length ?? 0), 0);
+}
+
+export function buildInterestRows(profile: InterestProfile): { tag: string; score: number }[] {
+  return Object.values(profile).sort((a, b) => b.score - a.score);
+}
+
+export function colorFromTag(tag: string): string {
+  let hash = 0;
+  for (let i = 0; i < tag.length; i += 1) {
+    hash = (hash * 31 + tag.charCodeAt(i)) % 360;
+  }
+  const hue = Math.abs(hash) % 360;
+  const sat = 70 + (Math.abs(hash * 7) % 21);
+  const light = 85 + (Math.abs(hash * 13) % 11);
+  return `hsl(${hue} ${sat}% ${light}%)`;
+}
+
+function renderTagPill(tag: string, count?: number): HTMLSpanElement {
+  const pill = document.createElement("span");
+  pill.className = "tag-pill";
+  pill.textContent = count !== undefined ? `${tag} (${count})` : tag;
+  pill.style.backgroundColor = colorFromTag(tag);
+  
+  // Make tag draggable
+  pill.draggable = true;
+  pill.addEventListener("dragstart", (e) => {
+    if (e.dataTransfer) {
+      e.dataTransfer.setData("application/x-bili-tag", tag);
+      e.dataTransfer.effectAllowed = "move";
+    }
+    createDragGhost(e, tag);
+    dragContext = { tag, dropped: false };
+  });
+  pill.addEventListener("dragend", () => {
+    removeDragGhost();
+    // If tag was not dropped in a valid zone, remove it from category
+    if (dragContext && !dragContext.dropped && dragContext.categoryId) {
+      removeTagFromCategory(dragContext.categoryId, tag);
+    }
+    dragContext = null;
+  });
+  
+  return pill;
+}
+
+let dragGhost: HTMLElement | null = null;
+let dragContext: { tag: string; originUpMid?: number; categoryId?: string; dropped: boolean } | null = null;
+let globalDragOverHandler: ((e: DragEvent) => void) | null = null;
+
+function createDragGhost(e: DragEvent, tag: string): void {
+  removeDragGhost();
+  const ghost = document.createElement("div");
+  ghost.className = "drag-ghost";
+  ghost.textContent = tag;
+  ghost.style.backgroundColor = colorFromTag(tag);
+  ghost.style.padding = "8px 16px";
+  ghost.style.borderRadius = "999px";
+  ghost.style.color = "#1f2430";
+  ghost.style.fontSize = "13px";
+  ghost.style.fontWeight = "600";
+  document.body.appendChild(ghost);
+  dragGhost = ghost;
+  if (e.dataTransfer) {
+    e.dataTransfer.setDragImage(ghost, 0, 0);
+  }
+  if (!globalDragOverHandler) {
+    globalDragOverHandler = (event: DragEvent) => {
+      event.preventDefault();
+      if (event.dataTransfer) {
+        event.dataTransfer.dropEffect = "move";
+      }
+    };
+    document.addEventListener("dragover", globalDragOverHandler);
+  }
+  
+  const moveGhost = (moveEvent: MouseEvent) => {
+    if (dragGhost) {
+      dragGhost.style.left = moveEvent.clientX + "px";
+      dragGhost.style.top = moveEvent.clientY + "px";
+    }
+  };
+  
+  document.addEventListener("mousemove", moveGhost);
+  document.addEventListener("mouseup", () => {
+    document.removeEventListener("mousemove", moveGhost);
+    setTimeout(() => removeDragGhost(), 100);
+  }, { once: true });
+}
+
+function removeDragGhost(): void {
+  if (dragGhost) {
+    dragGhost.remove();
+    dragGhost = null;
+  }
+  if (globalDragOverHandler) {
+    document.removeEventListener("dragover", globalDragOverHandler);
+    globalDragOverHandler = null;
+  }
+}
+
+let allTagCounts: Record<string, number> = {};
+let filteredTags: string[] = [];
+let currentCustomTags: string[] = [];
+let categories: Category[] = [];
+let filteredCategories: Category[] = [];
+
+function renderTags(upTags: Record<string, string[]>, searchTerm: string = ""): void {
+  const container = document.getElementById("tag-list");
+  if (!container) return;
+  container.innerHTML = "";
+  const tags = Object.values(upTags).flat();
+  if (tags.length === 0 && currentCustomTags.length === 0) {
+    const item = document.createElement("div");
+    item.className = "list-item";
+    item.textContent = "暂无分类词条";
+    container.appendChild(item);
+    return;
+  }
+  
+  // Count all tags
+  allTagCounts = {};
+  for (const tag of tags) {
+    allTagCounts[tag] = (allTagCounts[tag] ?? 0) + 1;
+  }
+  
+  // Ensure custom tags are included
+  for (const tag of currentCustomTags) {
+    if (!allTagCounts[tag]) {
+      allTagCounts[tag] = 0;
+    }
+  }
+  
+  // Filter tags by search term
+  if (searchTerm) {
+    filteredTags = Object.keys(allTagCounts).filter(tag => 
+      tag.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  } else {
+    filteredTags = Object.keys(allTagCounts);
+  }
+  
+  // Sort by count
+  const rows = filteredTags.map(tag => [tag, allTagCounts[tag]] as [string, number])
+    .sort((a, b) => b[1] - a[1]);
+  
+  for (const [tag, count] of rows) {
+    const item = document.createElement("div");
+    item.className = "list-item";
+    const label = document.createElement("span");
+    label.appendChild(renderTagPill(tag, count));
+    const value = document.createElement("span");
+    value.textContent = String(count);
+    item.appendChild(label);
+    item.appendChild(value);
+    container.appendChild(item);
+  }
+}
+
+function renderCategories(searchTerm: string = ""): void {
+  const container = document.getElementById("category-list");
+  if (!container) return;
+  container.innerHTML = "";
+  
+  if (categories.length === 0) {
+    const item = document.createElement("div");
+    item.className = "list-item";
+    item.textContent = "暂无大分区";
+    container.appendChild(item);
+    return;
+  }
+
+  // Filter categories by search term
+  if (searchTerm) {
+    filteredCategories = categories.filter(category =>
+      category.name.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  } else {
+    filteredCategories = categories;
+  }
+
+  for (const category of filteredCategories) {
+    const item = document.createElement("div");
+    item.draggable = true;
+    item.addEventListener("dragstart", (e) => {
+      if (e.dataTransfer) {
+        e.dataTransfer.setData("application/x-bili-category-tag", JSON.stringify({ 
+          tag: category.name, 
+          categoryId: category.id 
+        }));
+        e.dataTransfer.effectAllowed = "move";
+      }
+      createDragGhost(e, category.name);
+      dragContext = { tag: category.name, categoryId: category.id, dropped: false };
+    });
+
+    item.addEventListener("dragend", () => {
+      removeDragGhost();
+      dragContext = null;
+    });
+
+    item.className = "category-item";
+    
+    const header = document.createElement("div");
+    header.className = "category-header";
+    
+    const name = document.createElement("span");
+    name.className = "category-name";
+    name.textContent = category.name;
+    
+    const removeBtn = document.createElement("span");
+    removeBtn.className = "category-remove";
+    removeBtn.textContent = "×";
+    removeBtn.addEventListener("click", () => {
+      removeCategory(category.id);
+    });
+    
+    header.appendChild(name);
+    header.appendChild(removeBtn);
+    
+    const tagsContainer = document.createElement("div");
+    tagsContainer.className = "category-tags";
+    tagsContainer.dataset.categoryId = category.id;
+    
+    // Setup drag and drop for category tags
+    setupCategoryTagDropZone(tagsContainer, category.id);
+    
+    for (const tag of category.tags) {
+      tagsContainer.appendChild(renderCategoryTagPill(tag, category.id));
+    }
+    
+    item.appendChild(header);
+    item.appendChild(tagsContainer);
+    container.appendChild(item);
+  }
+}
+
+function renderCategoryTagPill(tag: string, categoryId: string): HTMLElement {
+  const pill = document.createElement("span");
+  pill.className = "tag-pill";
+  pill.textContent = tag;
+  pill.style.backgroundColor = colorFromTag(tag);
+  pill.draggable = true;
+  
+  pill.addEventListener("dragstart", (e) => {
+    if (e.dataTransfer) {
+      e.dataTransfer.setData("application/x-bili-category-tag", JSON.stringify({ tag, categoryId }));
+      e.dataTransfer.effectAllowed = "move";
+    }
+    createDragGhost(e, tag);
+    dragContext = { tag, categoryId, dropped: false };
+  });
+  
+  pill.addEventListener("dragend", () => {
+    removeDragGhost();
+    // If tag was not dropped in a valid zone, remove it from category
+    if (dragContext && !dragContext.dropped && dragContext.categoryId) {
+      removeTagFromCategory(dragContext.categoryId, tag);
+    }
+    dragContext = null;
+  });
+  
+  return pill;
+}
+
+function setupCategoryTagDropZone(element: HTMLElement, categoryId: string): void {
+  element.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    element.classList.add("drag-over");
+  });
+
+  element.addEventListener("dragleave", () => {
+    element.classList.remove("drag-over");
+  });
+
+  element.addEventListener("drop", (e) => {
+    e.preventDefault();
+    element.classList.remove("drag-over");
+
+    const tag = e.dataTransfer?.getData("application/x-bili-tag") ?? e.dataTransfer?.getData("text/plain");
+    if (!tag) return;
+    if (dragContext) {
+      dragContext.dropped = true;
+    }
+
+    addTagToCategory(categoryId, tag);
+  });
+}
+
+function addTagToCategory(categoryId: string, tag: string): void {
+  const category = categories.find(c => c.id === categoryId);
+  if (!category) return;
+  
+  if (!category.tags.includes(tag)) {
+    category.tags.push(tag);
+    saveCategories();
+    renderCategories((document.getElementById("category-search") as HTMLInputElement | null)?.value ?? "");
+  }
+}
+
+function removeTagFromCategory(categoryId: string, tag: string): void {
+  const category = categories.find(c => c.id === categoryId);
+  if (!category) return;
+  
+  category.tags = category.tags.filter(t => t !== tag);
+  saveCategories();
+  renderCategories((document.getElementById("category-search") as HTMLInputElement | null)?.value ?? "");
+}
+
+function addCategory(name: string): void {
+  const id = `category-${Date.now()}`;
+  const newCategory: Category = {
+    id,
+    name,
+    tags: []
+  };
+  categories.push(newCategory);
+  saveCategories();
+  renderCategories((document.getElementById("category-search") as HTMLInputElement | null)?.value ?? "");
+}
+
+function removeCategory(categoryId: string): void {
+  categories = categories.filter(c => c.id !== categoryId);
+  saveCategories();
+  renderCategories((document.getElementById("category-search") as HTMLInputElement | null)?.value ?? "");
+}
+
+function saveCategories(): void {
+  void setValue("categories", categories);
+}
+
 let includeTags: string[] = [];
 let excludeTags: string[] = [];
 let includeCategories: string[] = [];
 let excludeCategories: string[] = [];
+let upTagCache: UPTagCache = {};
 
 /**
- * Refresh UP list display.
+ * 获取UP的自动标签（权重最高的前3个，且不与手动标签重复）
  */
-function refreshUpList(): void {
-  renderUpList(currentUpList, currentUpTags);
-}
-
-/**
- * Get auto tags for UP.
- */
-async function getAutoTagsForUp(mid: number, manualTagIds: string[]): Promise<{ tag: string; count: number }[]> {
-  const upTagWeights = upTagCache[String(mid)];
-  if (!upTagWeights) {
-    return [];
-  }
-
-  const manualTagIdSet = new Set(manualTagIds);
+function getAutoTagsForUp(mid: number, manualTags: string[]): { tag: string; count: number }[] {
+  const autoTags = upTagCache[String(mid)]?.tags ?? [];
+  const manualTagSet = new Set(manualTags);
 
   // 过滤掉与手动标签重复的标签，并取前3个
-  const filteredTags = upTagWeights.tags
-    .filter(tagWeight => !manualTagIdSet.has(tagWeight.tag_id))
-    .slice(0, 5);
-
-  // 将标签ID转换为标签名称
-  const result: { tag: string; count: number }[] = [];
-  for (const tagWeight of filteredTags) {
-    const tag = await getTagById(tagWeight.tag_id);
-    if (tag) {
-      result.push({ tag: tag.name, count: tagWeight.weight });
-    }
-  }
-
-  return result;
+  return autoTags
+    .filter((tag: UPTagCount) => !manualTagSet.has(tag.tag))
+    .slice(0, 3);
 }
 
-/**
- * Render UP list.
- */
-async function renderUpList(
+function renderUpList(
   upList: UPCache["upList"],
   upTags: Record<string, string[]>
-): Promise<void> {
+): void {
   const container = document.getElementById("up-list");
   const searchTerm = (document.getElementById("up-search") as HTMLInputElement | null)?.value ?? "";
   if (!container) return;
@@ -128,44 +406,33 @@ async function renderUpList(
     container.appendChild(item);
     return;
   }
-
+  
   // Filter UP list based on include/exclude tags
   let filteredUpList = upList;
   if (includeTags.length > 0 || excludeTags.length > 0 || includeCategories.length > 0 || excludeCategories.length > 0 || searchTerm) {
-    // 需要先获取所有UP的自动标签，以便在过滤时使用
-    const autoTagsCache = new Map<number, string[]>();
-    for (const up of upList) {
-      const manualTags = upTags[String(up.mid)] ?? [];
-      const autoTags = await getAutoTagsForUp(up.mid, manualTags);
-      autoTagsCache.set(up.mid, autoTags.map(at => at.tag));
-    }
-
     filteredUpList = upList.filter(up => {
-      // 合并手动标签和自动标签进行过滤
-      const manualTags = upTags[String(up.mid)] ?? [];
-      const autoTags = autoTagsCache.get(up.mid) ?? [];
-      const allTags = [...manualTags, ...autoTags];
-
+      const tags = upTags[String(up.mid)] ?? [];
+      
       // Check if all include tags are present
-      const hasAllIncludeTags = includeTags.length === 0 ||
-        includeTags.every(tag => allTags.includes(tag));
-
+      const hasAllIncludeTags = includeTags.length === 0 || 
+        includeTags.every(tag => tags.includes(tag));
+      
       // Check if none of the exclude tags are present
-      const hasNoExcludeTags = excludeTags.length === 0 ||
-        !excludeTags.some(tag => allTags.includes(tag));
-
+      const hasNoExcludeTags = excludeTags.length === 0 || 
+        !excludeTags.some(tag => tags.includes(tag));
+      
       // Check if at least one tag from include categories is present (OR logic)
       const hasIncludeCategory = includeCategories.length === 0 ||
         includeCategories.some(categoryId => {
-          const category = getCategories().find(c => c.id === categoryId);
-          return category && category.tag_ids.some(tag => allTags.includes(tag));
+          const category = categories.find(c => c.id === categoryId);
+          return category && category.tags.some(tag => tags.includes(tag));
         });
 
       // Check if no tag from exclude categories is present
       const hasNoExcludeCategory = excludeCategories.length === 0 ||
         !excludeCategories.some(categoryId => {
-          const category = getCategories().find(c => c.id === categoryId);
-          return category && category.tag_ids.some(tag => allTags.includes(tag));
+          const category = categories.find(c => c.id === categoryId);
+          return category && category.tags.some(tag => tags.includes(tag));
         });
 
       // Check if UP name matches search term
@@ -175,7 +442,7 @@ async function renderUpList(
       return hasAllIncludeTags && hasNoExcludeTags && hasIncludeCategory && hasNoExcludeCategory && matchesSearch;
     });
   }
-
+  
   for (const up of filteredUpList) {
     const item = document.createElement("div");
     item.className = "up-item";
@@ -204,7 +471,7 @@ async function renderUpList(
     const manualTagList = upTags[String(up.mid)] ?? [];
 
     // 获取自动标签（权重最高的前3个）
-    const autoTagList = await getAutoTagsForUp(up.mid, manualTagList);
+    const autoTagList = getAutoTagsForUp(up.mid, manualTagList);
 
     // 渲染标签
     if (manualTagList.length === 0 && autoTagList.length === 0) {
@@ -212,7 +479,7 @@ async function renderUpList(
     } else {
       // 先渲染手动标签
       for (const tag of manualTagList) {
-        tags.appendChild(await renderUpTagPill(tag, up.mid));
+        tags.appendChild(renderUpTagPill(tag, up.mid));
       }
 
       // 添加分隔符
@@ -237,131 +504,43 @@ async function renderUpList(
   }
 }
 
-/**
- * Render UP tag pill.
- */
-async function renderUpTagPill(tag: string, mid: number): Promise<HTMLSpanElement> {
-  const pill = document.createElement("span");
-  pill.className = "tag-pill";
-  pill.textContent = tag;
-  pill.style.backgroundColor = colorFromTag(tag);
-  pill.draggable = true;
-  pill.addEventListener("click", () => {
-    const keyword = encodeURIComponent(tag);
-    window.open(`https://search.bilibili.com/all?keyword=${keyword}`, "_blank", "noreferrer");
-  });
-  pill.addEventListener("dragstart", (e) => {
-    if (e.dataTransfer) {
-      e.dataTransfer.setData("application/x-bili-tag", tag);
-      e.dataTransfer.effectAllowed = "move";
-    }
-    createDragGhost(e, tag);
-    setDragContext({ tag, originUpMid: mid, dropped: false });
-  });
-  pill.addEventListener("dragend", () => {
-    removeDragGhost();
-    const context = getDragContext();
-    if (context?.originUpMid === mid && !context.dropped) {
-      void removeTagFromUp(mid, tag);
-    }
-    setDragContext(null);
-  });
-  return pill;
-}
-
-/**
- * Add tag to UP.
- */
-async function addTagToUp(mid: number, tag: string): Promise<void> {
-  const { normalizeTag } = await import("./utils.js");
-  const nextTag = normalizeTag(tag);
-  if (!nextTag) return;
-  const key = String(mid);
-  const existing = currentUpTags[key] ?? [];
-  if (existing.includes(nextTag)) return;
-  
-  // 添加标签到标签库
-  const addedTag = await addTagsToLibrary([nextTag]);
-  const tagId = addedTag[0]?.id;
-  if (!tagId) return;
-  
-  // 更新UP的手动标签
-  const existingTagIds = await getUPManualTags(mid);
-  if (!existingTagIds.includes(tagId)) {
-    await setUPManualTags(mid, [...existingTagIds, tagId]);
+function renderInterests(rows: { tag: string; score: number }[]): void {
+  const container = document.getElementById("interest-list");
+  if (!container) return;
+  container.innerHTML = "";
+  if (rows.length === 0) {
+    const item = document.createElement("div");
+    item.className = "list-item";
+    item.textContent = "暂无兴趣数据";
+    container.appendChild(item);
+    return;
   }
-  
-  const next = [...existing, nextTag];
-  currentUpTags = { ...currentUpTags, [key]: next };
-  await renderUpList(currentUpList, currentUpTags);
-  await renderTags(currentUpTags, (document.getElementById("tag-search") as HTMLInputElement | null)?.value ?? "");
+  for (const row of rows) {
+    const item = document.createElement("div");
+    item.className = "list-item";
+    const label = document.createElement("span");
+    label.textContent = row.tag;
+    const value = document.createElement("span");
+    value.textContent = row.score.toFixed(2);
+    item.appendChild(label);
+    item.appendChild(value);
+    container.appendChild(item);
+  }
 }
 
-/**
- * Remove tag from UP.
- */
-async function removeTagFromUp(mid: number, tag: string): Promise<void> {
-  const key = String(mid);
-  const existing = currentUpTags[key] ?? [];
-  if (!existing.includes(tag)) return;
-  
-  // 从标签库中获取标签ID
-  const tagId = await getTagIdByName(tag);
-  if (!tagId) return;
-  
-  // 从UP的手动标签中移除
-  const existingTagIds = await getUPManualTags(mid);
-  const nextTagIds = existingTagIds.filter(id => id !== tagId);
-  await setUPManualTags(mid, nextTagIds);
-  
-  const next = existing.filter((t) => t !== tag);
-  currentUpTags = { ...currentUpTags, [key]: next };
-  await renderUpList(currentUpList, currentUpTags);
-  await renderTags(currentUpTags, (document.getElementById("tag-search") as HTMLInputElement | null)?.value ?? "");
-}
-
-/**
- * Setup UP tag drop zone.
- */
-function setupUpTagDropZone(tagsEl: HTMLElement, mid: number): void {
-  tagsEl.addEventListener("dragover", (e) => {
-    e.preventDefault();
-    tagsEl.classList.add("drag-over");
-  });
-
-  tagsEl.addEventListener("dragleave", () => {
-    tagsEl.classList.remove("drag-over");
-  });
-
-  tagsEl.addEventListener("drop", (e) => {
-    e.preventDefault();
-    tagsEl.classList.remove("drag-over");
-    const tag = e.dataTransfer?.getData("application/x-bili-tag") ?? e.dataTransfer?.getData("text/plain");
-    if (!tag) return;
-    const context = getDragContext();
-    if (context) {
-      setDragContext({ ...context, dropped: true });
-    }
-    void addTagToUp(mid, tag);
-  });
-}
-
-/**
- * Render filter tags.
- */
 function renderFilterTags(): void {
   const includeContainer = document.getElementById("filter-include-tags");
   const excludeContainer = document.getElementById("filter-exclude-tags");
   if (!includeContainer || !excludeContainer) return;
-
+  
   includeContainer.innerHTML = "";
   excludeContainer.innerHTML = "";
-
+  
   for (const tag of includeTags) {
     const tagEl = createFilterTag(tag, "include");
     includeContainer.appendChild(tagEl);
   }
-
+  
   for (const tag of excludeTags) {
     const tagEl = createFilterTag(tag, "exclude");
     excludeContainer.appendChild(tagEl);
@@ -378,15 +557,12 @@ function renderFilterTags(): void {
   }
 }
 
-/**
- * Create filter tag element.
- */
 function createFilterTag(tag: string, type: "include" | "exclude"): HTMLElement {
   const tagEl = document.createElement("div");
   tagEl.className = "filter-tag";
   tagEl.textContent = tag;
   tagEl.style.backgroundColor = colorFromTag(tag);
-
+  
   const removeBtn = document.createElement("span");
   removeBtn.className = "remove-tag";
   removeBtn.textContent = "×";
@@ -399,16 +575,13 @@ function createFilterTag(tag: string, type: "include" | "exclude"): HTMLElement 
     renderFilterTags();
     refreshUpList();
   });
-
+  
   tagEl.appendChild(removeBtn);
   return tagEl;
 }
 
-/**
- * Create filter category element.
- */
 function createFilterCategory(categoryId: string, type: "include" | "exclude"): HTMLElement {
-  const category = getCategories().find(c => c.id === categoryId);
+  const category = categories.find(c => c.id === categoryId);
   if (!category) {
     const errorEl = document.createElement("div");
     errorEl.className = "filter-tag filter-tag-error";
@@ -439,40 +612,37 @@ function createFilterCategory(categoryId: string, type: "include" | "exclude"): 
   return categoryEl;
 }
 
-/**
- * Setup drag and drop.
- */
 function setupDragAndDrop(): void {
   const includeZone = document.getElementById("filter-include-tags");
   const excludeZone = document.getElementById("filter-exclude-tags");
-
+  
   if (!includeZone || !excludeZone) return;
-
+  
   const zones = [
     { element: includeZone, type: "include" as const },
     { element: excludeZone, type: "exclude" as const }
   ];
-
+  
   for (const zone of zones) {
     zone.element.addEventListener("dragover", (e) => {
       e.preventDefault();
       zone.element.classList.add("drag-over");
     });
-
+    
     zone.element.addEventListener("dragleave", () => {
       zone.element.classList.remove("drag-over");
     });
-
+    
     zone.element.addEventListener("drop", (e) => {
       e.preventDefault();
       zone.element.classList.remove("drag-over");
-
+      
       // Check if it's a category tag
       const categoryTagData = e.dataTransfer?.getData("application/x-bili-category-tag");
       if (categoryTagData) {
         try {
           const { tag, categoryId } = JSON.parse(categoryTagData);
-          const category = getCategories().find(c => c.id === categoryId);
+          const category = categories.find(c => c.id === categoryId);
           if (category) {
             // Add category to filter
             if (zone.type === "include") {
@@ -498,11 +668,10 @@ function setupDragAndDrop(): void {
       // Handle regular tag
       const tag = e.dataTransfer?.getData("application/x-bili-tag") ?? e.dataTransfer?.getData("text/plain");
       if (!tag) return;
-      const context = getDragContext();
-      if (context) {
-        setDragContext({ ...context, dropped: true });
+      if (dragContext) {
+        dragContext.dropped = true;
       }
-
+      
       // Remove from other zone if exists
       if (zone.type === "include") {
         excludeTags = excludeTags.filter(t => t !== tag);
@@ -515,16 +684,125 @@ function setupDragAndDrop(): void {
           excludeTags.push(tag);
         }
       }
-
+      
       renderFilterTags();
       refreshUpList();
     });
   }
 }
 
-/**
- * Initialize stats page.
- */
+let currentUpList: UPCache["upList"] = [];
+let currentUpTags: Record<string, string[]> = {};
+
+function refreshUpList(): void {
+  renderUpList(currentUpList, currentUpTags);
+}
+
+function normalizeTag(tag: string): string {
+  return tag.trim();
+}
+
+async function addTagToUp(mid: number, tag: string): Promise<void> {
+  const nextTag = normalizeTag(tag);
+  if (!nextTag) return;
+  const key = String(mid);
+  const existing = currentUpTags[key] ?? [];
+  if (existing.includes(nextTag)) return;
+  const next = [...existing, nextTag];
+  currentUpTags = { ...currentUpTags, [key]: next };
+  await setValue("upTags", currentUpTags);
+  renderUpList(currentUpList, currentUpTags);
+  renderTags(currentUpTags, (document.getElementById("tag-search") as HTMLInputElement | null)?.value ?? "");
+}
+
+async function removeTagFromUp(mid: number, tag: string): Promise<void> {
+  const key = String(mid);
+  const existing = currentUpTags[key] ?? [];
+  if (!existing.includes(tag)) return;
+  const next = existing.filter((t) => t !== tag);
+  currentUpTags = { ...currentUpTags, [key]: next };
+  await setValue("upTags", currentUpTags);
+  renderUpList(currentUpList, currentUpTags);
+  renderTags(currentUpTags, (document.getElementById("tag-search") as HTMLInputElement | null)?.value ?? "");
+}
+
+function setupUpTagDropZone(tagsEl: HTMLElement, mid: number): void {
+  tagsEl.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    tagsEl.classList.add("drag-over");
+  });
+
+  tagsEl.addEventListener("dragleave", () => {
+    tagsEl.classList.remove("drag-over");
+  });
+
+  tagsEl.addEventListener("drop", (e) => {
+    e.preventDefault();
+    tagsEl.classList.remove("drag-over");
+    const tag = e.dataTransfer?.getData("application/x-bili-tag") ?? e.dataTransfer?.getData("text/plain");
+    if (!tag) return;
+    if (dragContext) {
+      dragContext.dropped = true;
+    }
+    void addTagToUp(mid, tag);
+  });
+}
+
+function renderUpTagPill(tag: string, mid: number): HTMLSpanElement {
+  const pill = document.createElement("span");
+  pill.className = "tag-pill";
+  pill.textContent = tag;
+  pill.style.backgroundColor = colorFromTag(tag);
+  pill.draggable = true;
+  pill.addEventListener("click", () => {
+    const keyword = encodeURIComponent(tag);
+    window.open(`https://search.bilibili.com/all?keyword=${keyword}`, "_blank", "noreferrer");
+  });
+  pill.addEventListener("dragstart", (e) => {
+    if (e.dataTransfer) {
+      e.dataTransfer.setData("application/x-bili-tag", tag);
+      e.dataTransfer.effectAllowed = "move";
+    }
+    createDragGhost(e, tag);
+    dragContext = { tag, originUpMid: mid, dropped: false };
+  });
+  pill.addEventListener("dragend", () => {
+    removeDragGhost();
+    if (dragContext?.originUpMid === mid && !dragContext.dropped) {
+      void removeTagFromUp(mid, tag);
+    }
+    dragContext = null;
+  });
+  return pill;
+}
+
+function renderAutoTagPill(tag: string, count: number): HTMLSpanElement {
+  const pill = document.createElement("span");
+  pill.className = "tag-pill tag-pill-auto";
+  pill.textContent = `${tag} (${count})`;
+  pill.style.backgroundColor = colorFromTag(tag);
+  pill.style.opacity = "0.7";
+  // 自动标签不可拖拽
+  pill.draggable = false;
+  // 自动标签不可交互，只能查看
+  pill.style.cursor = "default";
+  // 添加自动标签标识
+  const icon = document.createElement("i");
+  icon.className = "auto-tag-icon";
+  icon.textContent = "✧";
+  pill.appendChild(icon);
+  return pill;
+}
+
+async function addCustomTag(tag: string): Promise<void> {
+  const next = normalizeTag(tag);
+  if (!next) return;
+  if (currentCustomTags.includes(next)) return;
+  currentCustomTags = [...currentCustomTags, next];
+  await setValue("customTags", currentCustomTags);
+  renderTags(currentUpTags, (document.getElementById("tag-search") as HTMLInputElement | null)?.value ?? "");
+}
+
 export async function initStats(): Promise<void> {
   if (typeof document === "undefined") return;
 
@@ -580,48 +858,30 @@ export async function initStats(): Promise<void> {
     );
   });
 
-  // 获取已关注的UP列表
-  const followedUPs = await getFollowedUPList();
-  const tagLibrary = await getTagLibrary();
+  const upCache = (await getValue<UPCache>("upList")) ?? { upList: [] };
+  const upTags = (await getValue<Record<string, string[]>>("upTags")) ?? {};
   const customTags = (await getValue<string[]>("customTags")) ?? [];
   const videoCounts = (await getValue<Record<string, number>>("videoCounts")) ?? {};
   
-  // 加载分类库
-  const categoryLibrary = await getCategoryLibrary();
-  setCategories(Object.values(categoryLibrary));
-
-  // 设置当前UP列表和缓存
-  currentUpList = followedUPs;
-  upCache = { upList: followedUPs};
-  
-  // 从标签库和UP手动标签构建currentUpTags
-  const upTags: Record<string, string[]> = {};
-  for (const up of followedUPs) {
-    const manualTagIds = await getUPManualTags(up.mid);
-    upTags[String(up.mid)] = manualTagIds
-      .map(tagId => tagLibrary[tagId]?.name)
-      .filter((name): name is string => name !== undefined);
-  }
+  currentUpList = upCache.upList ?? [];
   currentUpTags = upTags;
-  setCurrentCustomTags(customTags);
-
-  // 加载UP标签权重缓存
-  upTagCache = (await getValue<UPTagWeightsCache>("upTagWeightsCache")) ?? {};
+  currentCustomTags = customTags;
+  categories = (await getValue<Category[]>("categories")) ?? [];
 
   setText("stat-up-count", String(upCache.upList?.length ?? 0));
   setText("stat-tag-count", String(countUpTags(upTags)));
   setText("stat-video-count", String(countVideoTotals(videoCounts)));
 
-  await renderUpList(currentUpList, currentUpTags);
-  await renderTags(currentUpTags);
+  renderUpList(currentUpList, currentUpTags);
+  renderTags(currentUpTags);
   renderCategories();
   setupDragAndDrop();
-
+  
   // Search box event
   const searchInput = document.getElementById("tag-search") as HTMLInputElement | null;
   searchInput?.addEventListener("input", (e) => {
     const searchTerm = (e.target as HTMLInputElement).value;
-    void renderTags(currentUpTags, searchTerm);
+    renderTags(currentUpTags, searchTerm);
   });
 
   // UP search box event
@@ -633,7 +893,7 @@ export async function initStats(): Promise<void> {
   const addTagBtn = document.getElementById("btn-add-tag");
   addTagBtn?.addEventListener("click", () => {
     const value = searchInput?.value ?? "";
-    void addCustomTag(value, currentUpTags);
+    void addCustomTag(value);
   });
 
   // Category search and add
@@ -651,15 +911,15 @@ export async function initStats(): Promise<void> {
       }
     }
   });
-
+  
   // Filter buttons
   const applyFilterBtn = document.getElementById("btn-apply-filter");
   const clearFilterBtn = document.getElementById("btn-clear-filter");
-
+  
   applyFilterBtn?.addEventListener("click", () => {
     refreshUpList();
   });
-
+  
   clearFilterBtn?.addEventListener("click", () => {
     includeTags = [];
     excludeTags = [];

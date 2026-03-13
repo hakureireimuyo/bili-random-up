@@ -1,44 +1,155 @@
 /**
- * Storage helpers based on chrome.storage.local.
+ * Storage helpers based on IndexedDB.
  */
-function getDefaultStorage() {
-    return chrome.storage;
+// ==================== IndexedDB 配置 ====================
+const DB_NAME = "BilibiliDiscoveryDB";
+const DB_VERSION = 1;
+// 定义所有对象存储
+const STORES = {
+    upList: { keyPath: "mid" },
+    videoCache: { keyPath: "mid" },
+    tagLibrary: { keyPath: "id" },
+    upTagWeightsCache: { keyPath: "mid" },
+    upManualTagsCache: { keyPath: "mid" },
+    categoryLibrary: { keyPath: "id" },
+    interestProfile: { keyPath: "tag" },
+    upFaceDataCache: { keyPath: "mid" },
+    classifyStatus: { keyPath: "id" }
+};
+// ==================== IndexedDB 初始化 ====================
+let db = null;
+/**
+ * 初始化IndexedDB数据库
+ */
+async function initDB() {
+    if (db) {
+        return db;
+    }
+    return new Promise((resolve, reject) => {
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
+        request.onerror = () => {
+            console.error("[IndexedDB] Failed to open database:", request.error);
+            reject(request.error);
+        };
+        request.onsuccess = () => {
+            db = request.result;
+            console.log("[IndexedDB] Database opened successfully");
+            resolve(db);
+        };
+        request.onupgradeneeded = (event) => {
+            const database = event.target.result;
+            console.log("[IndexedDB] Database upgrade needed");
+            // 创建所有对象存储
+            for (const [storeName, options] of Object.entries(STORES)) {
+                if (!database.objectStoreNames.contains(storeName)) {
+                    const objectStore = database.createObjectStore(storeName, { keyPath: options.keyPath });
+                    console.log(`[IndexedDB] Created object store: ${storeName}`);
+                    // 为某些存储创建索引
+                    if (storeName === "tagLibrary") {
+                        objectStore.createIndex("name", "name", { unique: true });
+                    }
+                    if (storeName === "upManualTagsCache") {
+                        objectStore.createIndex("lastUpdate", "lastUpdate");
+                    }
+                    if (storeName === "upTagWeightsCache") {
+                        objectStore.createIndex("lastUpdate", "lastUpdate");
+                    }
+                }
+            }
+        };
+    });
+}
+// ==================== 通用数据库操作 ====================
+/**
+ * 获取对象存储
+ */
+async function getObjectStore(storeName, mode = "readonly") {
+    const database = await initDB();
+    const transaction = database.transaction(storeName, mode);
+    return transaction.objectStore(storeName);
 }
 /**
- * Set a value in storage.
+ * 获取单个记录
  */
-export async function setValue(key, value, options = {}) {
-    const storage = options.storage ?? getDefaultStorage();
-    console.log("[Storage] Set", key);
-    await storage.local.set({ [key]: value });
+async function getRecord(storeName, key) {
+    const objectStore = await getObjectStore(storeName);
+    return new Promise((resolve, reject) => {
+        const request = objectStore.get(key);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+    });
 }
 /**
- * Get a value from storage.
+ * 获取所有记录
  */
-export async function getValue(key, options = {}) {
-    const storage = options.storage ?? getDefaultStorage();
-    const result = await storage.local.get(key);
-    const value = result[key];
-    return value ?? null;
+async function getAllRecords(storeName) {
+    const objectStore = await getObjectStore(storeName);
+    return new Promise((resolve, reject) => {
+        const request = objectStore.getAll();
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+    });
+}
+/**
+ * 添加或更新记录
+ */
+async function putRecord(storeName, data) {
+    const objectStore = await getObjectStore(storeName, "readwrite");
+    return new Promise((resolve, reject) => {
+        const request = objectStore.put(data);
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject(request.error);
+    });
+}
+/**
+ * 删除记录
+ */
+async function deleteRecord(storeName, key) {
+    const objectStore = await getObjectStore(storeName, "readwrite");
+    return new Promise((resolve, reject) => {
+        const request = objectStore.delete(key);
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject(request.error);
+    });
+}
+/**
+ * 清空对象存储
+ */
+async function clearStore(storeName) {
+    const objectStore = await getObjectStore(storeName, "readwrite");
+    return new Promise((resolve, reject) => {
+        const request = objectStore.clear();
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject(request.error);
+    });
 }
 // ==================== 标签库操作 ====================
 /**
  * 获取标签库
  */
-export async function getTagLibrary(options = {}) {
-    return (await getValue("tagLibrary", options)) ?? {};
+export async function getTagLibrary() {
+    const tags = await getAllRecords("tagLibrary");
+    const library = {};
+    tags.forEach(tag => {
+        library[tag.id] = tag;
+    });
+    return library;
 }
 /**
  * 保存标签库
  */
-export async function saveTagLibrary(library, options = {}) {
-    await setValue("tagLibrary", library, options);
+export async function saveTagLibrary(library) {
+    const objectStore = await getObjectStore("tagLibrary", "readwrite");
+    await clearStore("tagLibrary");
+    for (const tag of Object.values(library)) {
+        await putRecord("tagLibrary", tag);
+    }
 }
 /**
  * 添加标签到标签库
  */
-export async function addTagToLibrary(name, options = {}) {
-    const library = await getTagLibrary(options);
+export async function addTagToLibrary(name) {
+    const library = await getTagLibrary();
     // 检查是否已存在相同名称的标签
     const existingTag = Object.values(library).find(tag => tag.name === name);
     if (existingTag) {
@@ -51,30 +162,28 @@ export async function addTagToLibrary(name, options = {}) {
         name,
         created_at: Date.now()
     };
-    library[id] = tag;
-    await saveTagLibrary(library, options);
+    await putRecord("tagLibrary", tag);
     return tag;
 }
 /**
  * 根据ID获取标签
  */
-export async function getTagById(id, options = {}) {
-    const library = await getTagLibrary(options);
-    return library[id] ?? null;
+export async function getTagById(id) {
+    return getRecord("tagLibrary", id);
 }
 /**
  * 根据名称获取标签ID
  */
-export async function getTagIdByName(name, options = {}) {
-    const library = await getTagLibrary(options);
+export async function getTagIdByName(name) {
+    const library = await getTagLibrary();
     const tag = Object.values(library).find(t => t.name === name);
     return tag?.id ?? null;
 }
 /**
  * 批量添加标签到标签库
  */
-export async function addTagsToLibrary(names, options = {}) {
-    const library = await getTagLibrary(options);
+export async function addTagsToLibrary(names) {
+    const library = await getTagLibrary();
     const addedTags = [];
     for (const name of names) {
         // 检查是否已存在
@@ -90,28 +199,23 @@ export async function addTagsToLibrary(names, options = {}) {
             name,
             created_at: Date.now()
         };
-        library[id] = tag;
+        await putRecord("tagLibrary", tag);
         addedTags.push(tag);
     }
-    await saveTagLibrary(library, options);
     return addedTags;
 }
 // ==================== UP-标签权重操作 ====================
 /**
  * 获取UP的标签权重列表
  */
-export async function getUPTagWeights(mid, options = {}) {
-    const cache = (await getValue("upTagWeightsCache", options)) ?? {};
-    return cache[String(mid)] ?? null;
+export async function getUPTagWeights(mid) {
+    return getRecord("upTagWeightsCache", mid);
 }
 /**
  * 更新UP的标签权重
  */
-export async function updateUPTagWeights(mid, tagIds, options = {}) {
-    const cache = (await getValue("upTagWeightsCache", options)) ?? {};
-    const midKey = String(mid);
-    // 获取现有标签权重
-    const existingWeights = cache[midKey] ?? { mid, tags: [], lastUpdate: 0 };
+export async function updateUPTagWeights(mid, tagIds) {
+    const existingWeights = await getUPTagWeights(mid) ?? { mid, tags: [], lastUpdate: 0 };
     const existingTagsMap = new Map(existingWeights.tags.map(t => [t.tag_id, t.weight]));
     // 更新标签权重
     for (const tagId of tagIds) {
@@ -123,89 +227,97 @@ export async function updateUPTagWeights(mid, tagIds, options = {}) {
         .map(([tag_id, weight]) => ({ tag_id, weight }))
         .sort((a, b) => b.weight - a.weight);
     // 保存更新
-    cache[midKey] = {
+    await putRecord("upTagWeightsCache", {
         mid,
         tags: updatedTags,
         lastUpdate: Date.now()
-    };
-    await setValue("upTagWeightsCache", cache, options);
+    });
 }
 /**
  * 清除UP的标签权重
  */
-export async function clearUPTagWeights(mid, options = {}) {
-    const cache = (await getValue("upTagWeightsCache", options)) ?? {};
-    const midKey = String(mid);
-    if (cache[midKey]) {
-        delete cache[midKey];
-        await setValue("upTagWeightsCache", cache, options);
+export async function clearUPTagWeights(mid) {
+    await deleteRecord("upTagWeightsCache", mid);
+}
+/**
+ * 获取所有UP的标签计数
+ */
+export async function getUPTagCounts() {
+    const weights = await getAllRecords("upTagWeightsCache");
+    const cache = {};
+    for (const weight of weights) {
+        cache[String(weight.mid)] = {
+            tags: weight.tags.map(t => ({ tag: t.tag_id, count: t.weight })),
+            lastUpdate: weight.lastUpdate
+        };
     }
+    return cache;
 }
 // ==================== UP手动标签操作 ====================
 /**
  * 获取UP的手动标签
  */
-export async function getUPManualTags(mid, options = {}) {
-    const cache = (await getValue("upManualTagsCache", options)) ?? {};
-    return cache[String(mid)]?.tag_ids ?? [];
+export async function getUPManualTags(mid) {
+    const manualTag = await getRecord("upManualTagsCache", mid);
+    return manualTag?.tag_ids ?? [];
 }
 /**
  * 设置UP的手动标签
  */
-export async function setUPManualTags(mid, tagIds, options = {}) {
-    const cache = (await getValue("upManualTagsCache", options)) ?? {};
-    const midKey = String(mid);
-    cache[midKey] = {
+export async function setUPManualTags(mid, tagIds) {
+    await putRecord("upManualTagsCache", {
         mid,
         tag_ids: tagIds,
         lastUpdate: Date.now()
-    };
-    await setValue("upManualTagsCache", cache, options);
+    });
 }
 /**
  * 添加标签到UP的手动标签列表
  */
-export async function addTagToUPManualTags(mid, tagId, options = {}) {
-    const cache = (await getValue("upManualTagsCache", options)) ?? {};
-    const midKey = String(mid);
-    const existing = cache[midKey] ?? { mid, tag_ids: [], lastUpdate: 0 };
+export async function addTagToUPManualTags(mid, tagId) {
+    const existing = await getRecord("upManualTagsCache", mid) ?? { mid, tag_ids: [], lastUpdate: 0 };
     if (!existing.tag_ids.includes(tagId)) {
         existing.tag_ids.push(tagId);
         existing.lastUpdate = Date.now();
+        await putRecord("upManualTagsCache", existing);
     }
-    cache[midKey] = existing;
-    await setValue("upManualTagsCache", cache, options);
 }
 /**
  * 从UP的手动标签列表中移除标签
  */
-export async function removeTagFromUPManualTags(mid, tagId, options = {}) {
-    const cache = (await getValue("upManualTagsCache", options)) ?? {};
-    const midKey = String(mid);
-    if (cache[midKey]) {
-        cache[midKey].tag_ids = cache[midKey].tag_ids.filter(id => id !== tagId);
-        cache[midKey].lastUpdate = Date.now();
-        await setValue("upManualTagsCache", cache, options);
+export async function removeTagFromUPManualTags(mid, tagId) {
+    const existing = await getRecord("upManualTagsCache", mid);
+    if (existing) {
+        existing.tag_ids = existing.tag_ids.filter(id => id !== tagId);
+        existing.lastUpdate = Date.now();
+        await putRecord("upManualTagsCache", existing);
     }
 }
 // ==================== 大分区操作 ====================
 /**
  * 获取大分区库
  */
-export async function getCategoryLibrary(options = {}) {
-    return (await getValue("categoryLibrary", options)) ?? {};
+export async function getCategoryLibrary() {
+    const categories = await getAllRecords("categoryLibrary");
+    const library = {};
+    categories.forEach(category => {
+        library[category.id] = category;
+    });
+    return library;
 }
 /**
  * 保存大分区库
  */
-export async function saveCategoryLibrary(library, options = {}) {
-    await setValue("categoryLibrary", library, options);
+export async function saveCategoryLibrary(library) {
+    await clearStore("categoryLibrary");
+    for (const category of Object.values(library)) {
+        await putRecord("categoryLibrary", category);
+    }
 }
 /**
  * 创建大分区
  */
-export async function createCategory(name, tagIds = [], options = {}) {
-    const library = await getCategoryLibrary(options);
+export async function createCategory(name, tagIds = []) {
     const id = `category_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
     const category = {
         id,
@@ -213,60 +325,67 @@ export async function createCategory(name, tagIds = [], options = {}) {
         tag_ids: tagIds,
         created_at: Date.now()
     };
-    library[id] = category;
-    await saveCategoryLibrary(library, options);
+    await putRecord("categoryLibrary", category);
     return category;
 }
 /**
  * 删除大分区
  */
-export async function deleteCategory(categoryId, options = {}) {
-    const library = await getCategoryLibrary(options);
-    if (library[categoryId]) {
-        delete library[categoryId];
-        await saveCategoryLibrary(library, options);
-    }
+export async function deleteCategory(categoryId) {
+    await deleteRecord("categoryLibrary", categoryId);
 }
 /**
  * 添加标签到大分区
  */
-export async function addTagToCategory(categoryId, tagId, options = {}) {
-    const library = await getCategoryLibrary(options);
-    if (library[categoryId]) {
-        if (!library[categoryId].tag_ids.includes(tagId)) {
-            library[categoryId].tag_ids.push(tagId);
-            await saveCategoryLibrary(library, options);
+export async function addTagToCategory(categoryId, tagId) {
+    const category = await getRecord("categoryLibrary", categoryId);
+    if (category) {
+        if (!category.tag_ids.includes(tagId)) {
+            category.tag_ids.push(tagId);
+            await putRecord("categoryLibrary", category);
         }
     }
 }
 /**
  * 从大分区中移除标签
  */
-export async function removeTagFromCategory(categoryId, tagId, options = {}) {
-    const library = await getCategoryLibrary(options);
-    if (library[categoryId]) {
-        library[categoryId].tag_ids = library[categoryId].tag_ids.filter(id => id !== tagId);
-        await saveCategoryLibrary(library, options);
+export async function removeTagFromCategory(categoryId, tagId) {
+    const category = await getRecord("categoryLibrary", categoryId);
+    if (category) {
+        category.tag_ids = category.tag_ids.filter(id => id !== tagId);
+        await putRecord("categoryLibrary", category);
     }
 }
+// ==================== UP列表操作 ====================
 /**
  * Save UP list cache.
  */
-export async function saveUPList(upList, options = {}) {
+export async function saveUPList(upList) {
     const payload = { upList, lastUpdate: Date.now() };
-    await setValue("upList", payload, options);
+    // 清除旧的UP列表
+    await clearStore("upList");
+    // 保存新的UP列表
+    for (const up of upList) {
+        await putRecord("upList", up);
+    }
 }
 /**
  * Load UP list cache.
  */
-export async function loadUPList(options = {}) {
-    return getValue("upList", options);
+export async function loadUPList() {
+    const upList = await getAllRecords("upList");
+    if (upList.length === 0) {
+        return null;
+    }
+    // 获取最后更新时间
+    const lastUpdate = upList.length > 0 ? upList[0].follow_time : Date.now();
+    return { upList, lastUpdate };
 }
 /**
  * 获取已关注的UP列表
  */
-export async function getFollowedUPList(options = {}) {
-    const cache = await loadUPList(options);
+export async function getFollowedUPList() {
+    const cache = await loadUPList();
     if (!cache) {
         return [];
     }
@@ -275,94 +394,114 @@ export async function getFollowedUPList(options = {}) {
 /**
  * 更新UP的关注状态
  */
-export async function updateUPFollowStatus(mid, isFollowed, options = {}) {
-    const cache = await loadUPList(options);
-    if (!cache) {
-        return;
-    }
-    const up = cache.upList.find(u => u.mid === mid);
+export async function updateUPFollowStatus(mid, isFollowed) {
+    const up = await getRecord("upList", mid);
     if (up) {
         up.is_followed = isFollowed;
-        await saveUPList(cache.upList, options);
+        await putRecord("upList", up);
     }
 }
+// ==================== 视频缓存操作 ====================
 /**
  * Save video cache for a specific UP.
  */
-export async function saveVideoCache(mid, videos, options = {}) {
-    const cache = (await getValue("videoCache", options)) ?? {};
-    cache[String(mid)] = { videos, lastUpdate: Date.now() };
-    await setValue("videoCache", cache, options);
+export async function saveVideoCache(mid, videos) {
+    await putRecord("videoCache", {
+        mid,
+        videos,
+        lastUpdate: Date.now()
+    });
 }
 /**
  * Load video cache for a specific UP.
  */
-export async function loadVideoCache(mid, options = {}) {
-    const cache = await getValue("videoCache", options);
-    if (!cache) {
-        return null;
-    }
-    return cache[String(mid)] ?? null;
+export async function loadVideoCache(mid) {
+    return getRecord("videoCache", mid);
 }
+// ==================== 用户兴趣操作 ====================
 /**
  * Update interest score for a tag.
  */
-export async function updateInterest(tag, score, options = {}) {
-    const profile = (await getValue("interestProfile", options)) ?? {};
-    const existing = profile[tag]?.score ?? 0;
-    const next = { tag, score: existing + score };
-    profile[tag] = next;
-    await setValue("interestProfile", profile, options);
+export async function updateInterest(tag, score) {
+    const existing = await getRecord("interestProfile", tag) ?? { tag, score: 0 };
+    const next = { tag, score: existing.score + score };
+    await putRecord("interestProfile", next);
     return next;
 }
 // ==================== UP头像图片数据缓存操作 ====================
 /**
  * 保存UP的头像图片数据
  */
-export async function saveUPFaceData(mid, faceData, options = {}) {
-    const cache = (await getValue("upFaceDataCache", options)) ?? {};
-    cache[String(mid)] = {
+export async function saveUPFaceData(mid, faceData) {
+    await putRecord("upFaceDataCache", {
         mid,
         face_data: faceData,
         lastUpdate: Date.now()
-    };
-    await setValue("upFaceDataCache", cache, options);
+    });
 }
 /**
  * 获取UP的头像图片数据
  */
-export async function getUPFaceData(mid, options = {}) {
-    const cache = await getValue("upFaceDataCache", options);
-    if (!cache) {
-        return null;
-    }
-    return cache[String(mid)]?.face_data ?? null;
+export async function getUPFaceData(mid) {
+    const entry = await getRecord("upFaceDataCache", mid);
+    return entry?.face_data ?? null;
 }
 /**
  * 批量保存多个UP的头像图片数据
  */
-export async function saveMultipleUPFaceData(faceDataMap, options = {}) {
-    const cache = (await getValue("upFaceDataCache", options)) ?? {};
+export async function saveMultipleUPFaceData(faceDataMap) {
     for (const [mid, faceData] of Object.entries(faceDataMap)) {
-        cache[String(mid)] = {
-            mid: Number(mid),
-            face_data: faceData,
-            lastUpdate: Date.now()
-        };
+        await saveUPFaceData(Number(mid), faceData);
     }
-    await setValue("upFaceDataCache", cache, options);
 }
 /**
  * 清除UP的头像图片数据
  */
-export async function clearUPFaceData(mid, options = {}) {
-    const cache = await getValue("upFaceDataCache", options);
-    if (!cache) {
+export async function clearUPFaceData(mid) {
+    await deleteRecord("upFaceDataCache", mid);
+}
+// ==================== 分类状态操作 ====================
+/**
+ * 获取分类状态
+ */
+export async function getClassifyStatus() {
+    return getRecord("classifyStatus", "status");
+}
+/**
+ * 保存分类状态
+ */
+export async function setClassifyStatus(lastUpdate) {
+    await putRecord("classifyStatus", {
+        id: "status",
+        lastUpdate
+    });
+}
+// ==================== 通用存储操作 ====================
+/**
+ * Set a value in storage.
+ */
+export async function setValue(key, value) {
+    // 对于特殊键，使用特定的存储方法
+    if (key === "classifyStatus") {
+        await setClassifyStatus(value.lastUpdate);
         return;
     }
-    const midKey = String(mid);
-    if (cache[midKey]) {
-        delete cache[midKey];
-        await setValue("upFaceDataCache", cache, options);
+    // 对于其他键，使用通用存储
+    await putRecord("classifyStatus", {
+        id: key,
+        value
+    });
+}
+/**
+ * Get a value from storage.
+ */
+export async function getValue(key) {
+    // 对于特殊键，使用特定的存储方法
+    if (key === "classifyStatus") {
+        const status = await getClassifyStatus();
+        return status;
     }
+    // 对于其他键，使用通用存储
+    const record = await getRecord("classifyStatus", key);
+    return record?.value ?? null;
 }
