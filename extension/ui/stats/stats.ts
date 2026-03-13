@@ -2,7 +2,7 @@
  * Stats page logic.
  */
 
-import { getValue, setValue } from "../../storage/storage.js";
+import { getValue, setValue, getUPTagCounts, type UPTagCache } from "../../storage/storage.js";
 
 export interface InterestProfile {
   [tag: string]: { tag: string; score: number };
@@ -10,6 +10,11 @@ export interface InterestProfile {
 
 export interface UPCache {
   upList: { mid: number; name: string; face: string }[];
+}
+
+export interface UPTagCount {
+  tag: string;
+  count: number;
 }
 
 export interface Category {
@@ -371,6 +376,20 @@ let includeTags: string[] = [];
 let excludeTags: string[] = [];
 let includeCategories: string[] = [];
 let excludeCategories: string[] = [];
+let upTagCache: UPTagCache = {};
+
+/**
+ * 获取UP的自动标签（权重最高的前3个，且不与手动标签重复）
+ */
+function getAutoTagsForUp(mid: number, manualTags: string[]): { tag: string; count: number }[] {
+  const autoTags = upTagCache[String(mid)]?.tags ?? [];
+  const manualTagSet = new Set(manualTags);
+
+  // 过滤掉与手动标签重复的标签，并取前3个
+  return autoTags
+    .filter(tag => !manualTagSet.has(tag.tag))
+    .slice(0, 3);
+}
 
 function renderUpList(
   upList: UPCache["upList"],
@@ -447,14 +466,36 @@ function renderUpList(
     const tags = document.createElement("div");
     tags.className = "up-tags";
     setupUpTagDropZone(tags, up.mid);
-    const tagList = upTags[String(up.mid)] ?? [];
-    if (tagList.length === 0) {
+
+    // 获取手动标签
+    const manualTagList = upTags[String(up.mid)] ?? [];
+
+    // 获取自动标签（权重最高的前3个）
+    const autoTagList = getAutoTagsForUp(up.mid, manualTagList);
+
+    // 渲染标签
+    if (manualTagList.length === 0 && autoTagList.length === 0) {
       tags.textContent = "暂无分类";
     } else {
-      for (const tag of tagList) {
+      // 先渲染手动标签
+      for (const tag of manualTagList) {
         tags.appendChild(renderUpTagPill(tag, up.mid));
       }
+
+      // 添加分隔符
+      if (manualTagList.length > 0 && autoTagList.length > 0) {
+        const separator = document.createElement("span");
+        separator.className = "tag-separator";
+        separator.textContent = "|";
+        tags.appendChild(separator);
+      }
+
+      // 再渲染自动标签
+      for (const autoTag of autoTagList) {
+        tags.appendChild(renderAutoTagPill(autoTag.tag, autoTag.count));
+      }
     }
+
     info.appendChild(name);
     info.appendChild(tags);
     item.appendChild(avatarLink);
@@ -735,6 +776,24 @@ function renderUpTagPill(tag: string, mid: number): HTMLSpanElement {
   return pill;
 }
 
+function renderAutoTagPill(tag: string, count: number): HTMLSpanElement {
+  const pill = document.createElement("span");
+  pill.className = "tag-pill tag-pill-auto";
+  pill.textContent = `${tag} (${count})`;
+  pill.style.backgroundColor = colorFromTag(tag);
+  pill.style.opacity = "0.7";
+  // 自动标签不可拖拽
+  pill.draggable = false;
+  // 自动标签不可交互，只能查看
+  pill.style.cursor = "default";
+  // 添加自动标签标识
+  const icon = document.createElement("i");
+  icon.className = "auto-tag-icon";
+  icon.textContent = "✧";
+  pill.appendChild(icon);
+  return pill;
+}
+
 async function addCustomTag(tag: string): Promise<void> {
   const next = normalizeTag(tag);
   if (!next) return;
@@ -807,6 +866,7 @@ export async function initStats(): Promise<void> {
   currentUpList = upCache.upList ?? [];
   currentUpTags = upTags;
   currentCustomTags = customTags;
+  upTagCache = upTagCacheData;
   categories = (await getValue<Category[]>("categories")) ?? [];
 
   setText("stat-up-count", String(upCache.upList?.length ?? 0));
