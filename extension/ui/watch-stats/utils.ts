@@ -66,6 +66,40 @@ export function getMonthDays(): Array<{ date: string; day: number }> {
 }
 
 /**
+ * HSL转RGB
+ */
+function hslToRgb(h: number, s: number, l: number): { r: number; g: number; b: number } {
+  s /= 100;
+  l /= 100;
+
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = l - c / 2;
+
+  let r = 0, g = 0, b = 0;
+
+  if (0 <= h && h < 60) {
+    r = c; g = x; b = 0;
+  } else if (60 <= h && h < 120) {
+    r = x; g = c; b = 0;
+  } else if (120 <= h && h < 180) {
+    r = 0; g = c; b = x;
+  } else if (180 <= h && h < 240) {
+    r = 0; g = x; b = c;
+  } else if (240 <= h && h < 300) {
+    r = x; g = 0; b = c;
+  } else if (300 <= h && h < 360) {
+    r = c; g = 0; b = x;
+  }
+
+  return {
+    r: Math.round((r + m) * 255),
+    g: Math.round((g + m) * 255),
+    b: Math.round((b + m) * 255)
+  };
+}
+
+/**
  * 根据观看时长计算热力图颜色
  * @param seconds 观看时长（秒）
  * @param maxSeconds 最大时长（秒），默认8小时
@@ -74,13 +108,41 @@ export function getMonthDays(): Array<{ date: string; day: number }> {
 export function getHeatmapColor(seconds: number, maxSeconds = 8 * 3600): string {
   const ratio = Math.min(seconds / maxSeconds, 1);
 
-  // 从浅蓝色 #c7d2fe 到深紫色 #6366f1 的渐变
-  const startColor = { r: 199, g: 210, b: 254 }; // #c7d2fe
-  const endColor = { r: 99, g: 102, b: 241 }; // #6366f1
+  // 定义6个颜色断点，使用HSL颜色空间
+  // 色相均匀分布在色环上（每60度一个点）
+  // 明度从50%降到25%
+  // 纯度从20%升到100%
+  const colorStops = [
+    { position: 0.0, h: 240, s: 80, l: 90 },      // 红色
+    { position: 0.2, h: 120, s: 80, l: 90 },     // 黄色
+    { position: 0.4, h: 0, s: 80, l: 90 },     // 绿色
+    { position: 0.6, h: 180, s: 80, l: 90 },     // 青色
+    { position: 0.8, h: 300, s: 80, l: 90 },     // 蓝色
+    { position: 1.0, h: 60, s: 80, l: 90 }     // 紫红色
+  ];
 
-  const r = Math.round(startColor.r + (endColor.r - startColor.r) * ratio);
-  const g = Math.round(startColor.g + (endColor.g - startColor.g) * ratio);
-  const b = Math.round(startColor.b + (endColor.b - startColor.b) * ratio);
+  // 找到ratio所在的区间
+  let startStop = colorStops[0];
+  let endStop = colorStops[colorStops.length - 1];
 
-  return `rgb(${r}, ${g}, ${b})`;
+  for (let i = 0; i < colorStops.length - 1; i++) {
+    if (ratio >= colorStops[i].position && ratio <= colorStops[i + 1].position) {
+      startStop = colorStops[i];
+      endStop = colorStops[i + 1];
+      break;
+    }
+  }
+
+  // 计算当前区间内的局部比例
+  const localRatio = (ratio - startStop.position) / (endStop.position - startStop.position);
+
+  // 在当前区间内进行HSL插值
+  const h = startStop.h + (endStop.h - startStop.h) * localRatio;
+  const s = startStop.s + (endStop.s - startStop.s) * localRatio;
+  const l = startStop.l + (endStop.l - startStop.l) * localRatio;
+
+  // 转换为RGB
+  const rgb = hslToRgb(h, s, l);
+
+  return `rgb(${rgb.r}, ${rgb.g}, ${rgb.b})`;
 }
