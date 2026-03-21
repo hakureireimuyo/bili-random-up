@@ -10,7 +10,7 @@ import {
   getTagIdByName,
   updateUPFollowStatus,
   type UP 
-} from "../../database/bilibili-data.js";
+} from "../../database/implementations/index.js";
 import type { BackgroundOptions, MessageLike, WatchProgressPayload } from "./common-types.js";
 import { classifyUpTask } from "./classify-api.js";
 import { handleUPPageCollected, getPageClassifyProgress, startAutoClassification } from "./classify-page.js";

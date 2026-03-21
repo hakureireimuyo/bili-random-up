@@ -1,7 +1,7 @@
 import { formatSeconds } from "./utils.js";
 import type { WatchStats } from "../../background/modules/common-types.js";
-import type { UP } from "../../database/bilibili-data.js";
-import { getTagLibrary } from "../../database/bilibili-data.js";
+import type { UP } from "../../database/implementations/index.js";
+import { getTagLibrary } from "../../database/implementations/index.js";
 
 /**
  * 渲染简单的列表

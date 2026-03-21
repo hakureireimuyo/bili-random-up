@@ -1,11 +1,11 @@
-import { getValue, loadUPList } from "../../database/bilibili-data.js";
+import { getValue, loadUPList } from "../../database/implementations/index.js";
 import { formatSeconds, formatTime, getRecentDays } from "./utils.js";
 import { renderHeatmap } from "./heatmap.js";
 import { renderLineChart } from "./line-chart.js";
 import { renderTagList, renderUPList, renderVideoList } from "./list-renderer.js";
 import { initVideoSearch, initTagSearch } from "./search.js";
 import type { WatchStats } from "../../background/modules/common-types";
-import type { UP } from "../../database/bilibili-data";
+import type { UP } from "../../database/implementations/index.js";
 
 /**
  * 刷新统计数据

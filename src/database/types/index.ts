@@ -5,6 +5,24 @@
 
 // 基础类型
 export type {
+  UP,
+  AppVideo,
+  UPCache,
+  UPFaceDataCacheEntry,
+  VideoCacheEntry,
+  UserInterest,
+  InterestProfile,
+  AppTag,
+  TagLibrary,
+  UPTagWeight,
+  UPTagWeights,
+  UPTagCount,
+  UPTagCache,
+  AppCategory,
+  CategoryLibrary
+} from './app.js';
+
+export type {
   Platform,
   TagSource,
   VideoSource,

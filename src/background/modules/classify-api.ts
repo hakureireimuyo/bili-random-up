@@ -1,6 +1,6 @@
 import { getUPInfo, getUPVideos, getUPVideosForClassification, getVideoTags } from "../../api/bili-api.js";
 import { classifyUP } from "../../engine/classifier.js";
-import { getValue, setValue, addTagsToLibrary, getUPManualTags, setUPManualTags, getTagLibrary, loadUPList } from "../../database/bilibili-data.js";
+import { getValue, setValue, addTagsToLibrary, getUPManualTags, setUPManualTags, getTagLibrary, loadUPList } from "../../database/implementations/index.js";
 import type { BackgroundOptions } from "./common-types.js";
 import { proxyApiRequest } from "./proxy.js";
 

@@ -15,9 +15,9 @@ import {
   type InterestProfile,
   type UP,
   type UserInterest,
-  type Video,
+  type AppVideo as Video,
   type UPTagWeights
-} from "../database/bilibili-data.js";
+} from "../database/implementations/index.js";
 
 export interface WatchEvent {
   tags: string[];

@@ -6,30 +6,24 @@
 // Semantic 实现
 export { TagRepository } from './tag-repository.impl.js';
 export { CategoryRepository } from './category-repository.impl.js';
-export {
-  addStatsPageManualTag,
-  addTagNameToStatsPageCategory,
-  createStatsPageCategory,
-  deleteStatsPageCategory,
-  getStatsPageAllManualTags,
-  getStatsPageCategories,
-  getStatsPageCustomTags,
-  getStatsPageTagLibrary,
-  getStatsPageUPList,
-  getStatsPageUPTagCounts,
-  getStatsPageVideoCounts,
-  removeStatsPageManualTag,
-  removeTagNameFromStatsPageCategory,
-  setStatsPageCustomTags
-} from './stats-page-data.impl.js';
+export * from './bilibili-data-access.impl.js';
 export type {
-  StatsPageCategory,
-  StatsPageTag,
-  StatsPageTagLibrary,
-  StatsPageUP,
-  StatsPageUPTagCache,
-  StatsPageUPTagCount
-} from './stats-page-data.impl.js';
+  AppCategory,
+  AppTag,
+  AppVideo,
+  CategoryLibrary,
+  InterestProfile,
+  TagLibrary,
+  UPCache,
+  UPFaceDataCacheEntry,
+  UPTagCache,
+  UPTagCount,
+  UPTagWeight,
+  UPTagWeights,
+  UP,
+  UserInterest,
+  VideoCacheEntry
+} from '../types/app.js';
 
 // Creator 实现
 export { CreatorRepository } from './creator-repository.impl.js';

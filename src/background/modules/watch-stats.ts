@@ -1,4 +1,4 @@
-import { getValue, setValue, saveUPList, loadUPList, addTagsToLibrary, getTagLibrary, updateUPTagWeights, type UP, type Tag } from "../../database/bilibili-data.js";
+import { getValue, setValue, saveUPList, loadUPList, addTagsToLibrary, getTagLibrary, updateUPTagWeights, type UP, type AppTag as Tag } from "../../database/implementations/index.js";
 import type { BackgroundOptions, WatchProgressPayload, WatchStats } from "./common-types.js";
 
 function toLocalDateKey(timestamp: number): string {

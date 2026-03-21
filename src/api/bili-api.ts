@@ -73,7 +73,7 @@ export async function rateLimiter(
 /**
  * Unified API request helper.
  */
-import { getValue } from "../database/bilibili-data.js";
+import { getValue } from "../database/implementations/index.js";
 
 async function getAuthHeaders(): Promise<Record<string, string>> {
   const headers: Record<string, string> = {

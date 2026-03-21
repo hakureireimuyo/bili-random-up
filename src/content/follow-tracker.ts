@@ -2,7 +2,6 @@
  * Track follow/unfollow events on Bilibili pages.
  */
 
-import { getValue, setValue, loadUPList, saveUPList } from "../database/bilibili-data.js";
 
 interface UP {
   mid: number;

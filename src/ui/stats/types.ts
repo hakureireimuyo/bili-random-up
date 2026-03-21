@@ -1,7 +1,7 @@
-import type { StatsPageUPTagCache as UPTagCache } from "../../database/implementations/index.js";
+import type { UP, UPTagCache } from "../../database/implementations/index.js";
 
 export interface UPCache {
-  upList: { mid: number; name: string; face: string; is_followed?: boolean }[];
+  upList: UP[];
 }
 
 export interface Category {

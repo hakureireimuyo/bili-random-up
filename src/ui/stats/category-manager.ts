@@ -1,8 +1,10 @@
 import {
-  addTagNameToStatsPageCategory,
-  createStatsPageCategory,
-  deleteStatsPageCategory,
-  removeTagNameFromStatsPageCategory
+  addTagToCategory as addTagIdToCategory,
+  addTagToLibrary,
+  createCategory,
+  deleteCategory,
+  getTagIdByName,
+  removeTagFromCategory as removeTagIdFromCategory
 } from "../../database/implementations/index.js";
 import { createDragGhost, getDragContext, removeDragGhost, setDragContext } from "./drag.js";
 import { colorFromTag, findCategory, getInputValue } from "./helpers.js";
@@ -12,15 +14,15 @@ type RenderFn = () => void;
 
 export function addCategory(state: StatsState, name: string, onChanged: RenderFn): void {
   void (async () => {
-    const category = await createStatsPageCategory(name);
-    state.categories.push(category);
+    const category = await createCategory(name);
+    state.categories.push({ id: category.id, name: category.name, tags: [] });
     onChanged();
   })();
 }
 
 export function removeCategory(state: StatsState, categoryId: string, onChanged: RenderFn): void {
   state.categories = state.categories.filter((category) => category.id !== categoryId);
-  void deleteStatsPageCategory(categoryId);
+  void deleteCategory(categoryId);
   onChanged();
 }
 
@@ -30,7 +32,10 @@ export function addTagToCategory(state: StatsState, categoryId: string, tag: str
     return;
   }
   category.tags.push(tag);
-  void addTagNameToStatsPageCategory(categoryId, tag);
+  void (async () => {
+    const tagObj = await addTagToLibrary(tag);
+    await addTagIdToCategory(categoryId, tagObj.id);
+  })();
   onChanged();
 }
 
@@ -45,7 +50,12 @@ export function removeTagFromCategory(
     return;
   }
   category.tags = category.tags.filter((item) => item !== tag);
-  void removeTagNameFromStatsPageCategory(categoryId, tag);
+  void (async () => {
+    const tagId = await getTagIdByName(tag);
+    if (tagId) {
+      await removeTagIdFromCategory(categoryId, tagId);
+    }
+  })();
   onChanged();
 }
 

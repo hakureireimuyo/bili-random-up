@@ -1,12 +1,27 @@
-import { CategoryRepository } from "./implementations/category-repository.impl.js";
-import { CreatorRepository } from "./implementations/creator-repository.impl.js";
-import { InterestScoreRepository } from "./implementations/interest-score-repository.impl.js";
-import { TagRepository } from "./implementations/tag-repository.impl.js";
-import { getAppState, setAppState, clearAppStateByPrefix } from "./app-state.js";
-import { DBUtils, STORE_NAMES } from "./indexeddb/index.js";
-import { Platform, TagSource } from "./types/base.js";
-import type { Creator as DBCreator, CreatorTagWeight as DBCreatorTagWeight } from "./types/creator.js";
-import type { Category as DBCategory, Tag as DBTag } from "./types/semantic.js";
+import { getAppState, setAppState, clearAppStateByPrefix } from "../app-state.js";
+import { DBUtils, STORE_NAMES } from "../indexeddb/index.js";
+import { Platform, TagSource } from "../types/base.js";
+import type { Creator as DBCreator, CreatorTagWeight as DBCreatorTagWeight } from "../types/creator.js";
+import type { Category as DBCategory, Tag as DBTag } from "../types/semantic.js";
+import type {
+  AppCategory as Category,
+  AppTag as Tag,
+  AppVideo as Video,
+  CategoryLibrary,
+  InterestProfile,
+  TagLibrary,
+  UPCache,
+  UPFaceDataCacheEntry,
+  UPTagCache,
+  UPTagWeights,
+  UP,
+  UserInterest,
+  VideoCacheEntry
+} from "../types/app.js";
+import { CategoryRepository } from "./category-repository.impl.js";
+import { CreatorRepository } from "./creator-repository.impl.js";
+import { InterestScoreRepository } from "./interest-score-repository.impl.js";
+import { TagRepository } from "./tag-repository.impl.js";
 
 const creatorRepository = new CreatorRepository();
 const tagRepository = new TagRepository();
@@ -14,102 +29,16 @@ const categoryRepository = new CategoryRepository();
 const interestRepository = new InterestScoreRepository();
 const BILIBILI = Platform.BILIBILI;
 
-export interface UP {
-  mid: number;
-  name: string;
-  face: string;
-  face_data?: string;
-  sign: string;
-  follow_time: number;
-  is_followed: boolean;
+let allCreatorsCache: DBCreator[] | null = null;
+let tagLibraryCache: TagLibrary | null = null;
+
+function invalidateCreatorCache(): void {
+  allCreatorsCache = null;
 }
 
-export interface Video {
-  bvid: string;
-  aid: number;
-  title: string;
-  play: number;
-  duration: number;
-  pubdate: number;
-  tags: string[];
-  created_at?: number;
+function invalidateTagCache(): void {
+  tagLibraryCache = null;
 }
-
-export interface UPCache {
-  upList: UP[];
-  lastUpdate: number;
-}
-
-export interface UPFaceDataCacheEntry {
-  mid: number;
-  face_data: string;
-  lastUpdate: number;
-}
-
-export type UPFaceDataCache = Record<string, UPFaceDataCacheEntry>;
-
-export interface VideoCacheEntry {
-  videos: Video[];
-  lastUpdate: number;
-}
-
-export type VideoCache = Record<string, VideoCacheEntry>;
-
-export interface UserInterest {
-  tag: string;
-  score: number;
-}
-
-export type InterestProfile = Record<string, UserInterest>;
-
-export interface Tag {
-  id: string;
-  name: string;
-  created_at: number;
-  editable: boolean;
-  count: number;
-}
-
-export type TagLibrary = Record<string, Tag>;
-
-export interface UPTagWeight {
-  tag_id: string;
-  weight: number;
-  editable?: boolean;
-}
-
-export interface UPTagWeights {
-  mid: number;
-  tags: UPTagWeight[];
-  lastUpdate: number;
-}
-
-export type UPTagWeightsCache = Record<string, UPTagWeights>;
-
-export interface UPManualTag {
-  mid: number;
-  tag_ids: string[];
-  lastUpdate: number;
-}
-
-export type UPManualTagsCache = Record<string, UPManualTag>;
-
-export interface UPTagCount {
-  tag: string;
-  count: number;
-  editable?: boolean;
-}
-
-export type UPTagCache = Record<string, { tags: UPTagCount[]; lastUpdate: number }>;
-
-export interface Category {
-  id: string;
-  name: string;
-  tag_ids: string[];
-  created_at: number;
-}
-
-export type CategoryLibrary = Record<string, Category>;
 
 function tagCountKey(): string {
   return "tagCounts";
@@ -189,23 +118,25 @@ async function ensureCreator(mid: number): Promise<DBCreator> {
 }
 
 async function getAllBilibiliCreators(): Promise<DBCreator[]> {
-  const followed = await creatorRepository.getFollowingCreators(BILIBILI);
-  const all = await DBUtils.getAll<DBCreator>(STORE_NAMES.CREATORS);
-  const merged = new Map<string, DBCreator>();
-  for (const creator of [...all.filter((item) => item.platform === BILIBILI), ...followed]) {
-    merged.set(creator.creatorId, creator);
+  if (allCreatorsCache) {
+    return allCreatorsCache;
   }
-  return Array.from(merged.values()).sort((a, b) => b.followTime - a.followTime);
+  allCreatorsCache = await creatorRepository.getAllCreators(BILIBILI);
+  return allCreatorsCache;
 }
 
 async function getTagsByIds(tagIds: string[]): Promise<Record<string, DBTag>> {
-  const tags = await tagRepository.getTags(tagIds);
+  const tags = await tagRepository.getTags([...new Set(tagIds)]);
   return Object.fromEntries(tags.map((tag) => [tag.tagId, tag]));
 }
 
 export async function getTagLibrary(): Promise<TagLibrary> {
+  if (tagLibraryCache) {
+    return tagLibraryCache;
+  }
   const [tags, counts] = await Promise.all([tagRepository.getAllTags(), getTagCounts()]);
-  return Object.fromEntries(tags.map((tag) => [tag.tagId, toLegacyTag(tag, counts)]));
+  tagLibraryCache = Object.fromEntries(tags.map((tag) => [tag.tagId, toLegacyTag(tag, counts)]));
+  return tagLibraryCache;
 }
 
 export async function saveTagLibrary(library: TagLibrary): Promise<void> {
@@ -219,12 +150,12 @@ export async function saveTagLibrary(library: TagLibrary): Promise<void> {
       createdAt: tag.created_at
     });
   }
+  invalidateTagCache();
 }
 
 export async function addTagToLibrary(name: string, editable: boolean = true): Promise<Tag> {
   const normalized = name.trim();
-  const tags = await tagRepository.getAllTags();
-  const existing = tags.find((tag) => tag.name === normalized);
+  const existing = await tagRepository.findTagByName(normalized);
   const counts = await getTagCounts();
   if (existing) {
     if (!editable && existing.source === TagSource.SYSTEM) {
@@ -234,14 +165,16 @@ export async function addTagToLibrary(name: string, editable: boolean = true): P
     return toLegacyTag(existing, counts);
   }
 
+  const createdAt = Date.now();
   const tagId = await tagRepository.createTag({
     name: normalized,
     source: editable ? TagSource.USER : TagSource.SYSTEM,
-    createdAt: Date.now()
+    createdAt
   });
   counts[tagId] = editable ? 0 : 1;
   await saveTagCounts(counts);
-  return { id: tagId, name: normalized, created_at: Date.now(), editable, count: counts[tagId] };
+  invalidateTagCache();
+  return { id: tagId, name: normalized, created_at: createdAt, editable, count: counts[tagId] };
 }
 
 export async function addTagsToLibrary(names: string[], editable: boolean = true): Promise<Tag[]> {
@@ -258,8 +191,7 @@ export async function getTagById(id: string): Promise<Tag | null> {
 }
 
 export async function getTagIdByName(name: string): Promise<string | null> {
-  const tags = await tagRepository.getAllTags();
-  return tags.find((tag) => tag.name === name)?.tagId ?? null;
+  return (await tagRepository.findTagByName(name))?.tagId ?? null;
 }
 
 export async function getTagsSortedByCount(editable?: boolean): Promise<Tag[]> {
@@ -302,12 +234,14 @@ export async function updateUPTagWeights(mid: number, tagIds: string[], editable
     });
   }
   await creatorRepository.upsertCreator({ ...creator, tagWeights: Array.from(weights.values()) });
+  invalidateCreatorCache();
 }
 
 export async function clearUPTagWeights(mid: number): Promise<void> {
   const creator = await creatorRepository.getCreator(String(mid), BILIBILI);
   if (creator) {
     await creatorRepository.upsertCreator({ ...creator, tagWeights: [] });
+    invalidateCreatorCache();
   }
 }
 
@@ -334,7 +268,9 @@ export async function getUPManualTags(mid: number): Promise<string[]> {
 
 export async function getAllUPManualTags(): Promise<Record<string, string[]>> {
   const creators = await getAllBilibiliCreators();
-  const entries = await Promise.all(creators.map(async (creator) => [creator.creatorId, await getUPManualTags(Number(creator.creatorId))] as const));
+  const entries = await Promise.all(
+    creators.map(async (creator) => [creator.creatorId, await getUPManualTags(Number(creator.creatorId))] as const)
+  );
   return Object.fromEntries(entries.filter(([, tagIds]) => tagIds.length > 0));
 }
 
@@ -344,6 +280,7 @@ export async function setUPManualTags(mid: number, tagIds: string[]): Promise<vo
   const manualWeights = tagIds.map((tagId) => ({ tagId, source: TagSource.USER, count: 0, createdAt: Date.now() }));
   const systemWeights = creator.tagWeights.filter((tagWeight) => tagWeight.source !== TagSource.USER);
   await creatorRepository.upsertCreator({ ...creator, tagWeights: [...systemWeights, ...manualWeights] });
+  invalidateCreatorCache();
 }
 
 export async function addTagToUPManualTags(mid: number, tagId: string): Promise<void> {
@@ -360,7 +297,12 @@ export async function removeTagFromUPManualTags(mid: number, tagId: string): Pro
 
 export async function getCategoryLibrary(): Promise<CategoryLibrary> {
   const categories = await categoryRepository.getAllCategories();
-  return Object.fromEntries(categories.map((category) => [category.id, { id: category.id, name: category.name, tag_ids: category.tagIds, created_at: category.createdAt }]));
+  return Object.fromEntries(
+    categories.map((category) => [
+      category.id,
+      { id: category.id, name: category.name, tag_ids: category.tagIds, created_at: category.createdAt }
+    ])
+  );
 }
 
 export async function saveCategoryLibrary(library: CategoryLibrary): Promise<void> {
@@ -376,8 +318,9 @@ export async function saveCategoryLibrary(library: CategoryLibrary): Promise<voi
 }
 
 export async function createCategory(name: string, tagIds: string[] = []): Promise<Category> {
-  const id = await categoryRepository.createCategory({ name, tagIds, createdAt: Date.now() });
-  return { id, name, tag_ids: tagIds, created_at: Date.now() };
+  const createdAt = Date.now();
+  const id = await categoryRepository.createCategory({ name, tagIds, createdAt });
+  return { id, name, tag_ids: tagIds, created_at: createdAt };
 }
 
 export async function deleteCategory(categoryId: string): Promise<void> {
@@ -402,9 +345,14 @@ export async function saveUPList(upList: UP[]): Promise<void> {
   }
   for (const up of upList) {
     const existingCreator = await creatorRepository.getCreator(String(up.mid), BILIBILI);
-    const nextCreator = { ...(existingCreator ?? toDBCreator(up)), ...toDBCreator(up), tagWeights: existingCreator?.tagWeights ?? [] };
+    const nextCreator = {
+      ...(existingCreator ?? toDBCreator(up)),
+      ...toDBCreator(up),
+      tagWeights: existingCreator?.tagWeights ?? []
+    };
     await creatorRepository.upsertCreator(nextCreator);
   }
+  invalidateCreatorCache();
 }
 
 export async function loadUPList(): Promise<UPCache | null> {
@@ -429,7 +377,12 @@ export async function updateUPFollowStatus(mid: number, isFollowed: boolean): Pr
   if (!creator) {
     return;
   }
-  await creatorRepository.upsertCreator({ ...creator, isFollowing: isFollowed ? 1 : 0, followTime: isFollowed ? Date.now() : creator.followTime });
+  await creatorRepository.upsertCreator({
+    ...creator,
+    isFollowing: isFollowed ? 1 : 0,
+    followTime: isFollowed ? Date.now() : creator.followTime
+  });
+  invalidateCreatorCache();
 }
 
 export async function saveVideoCache(mid: number, videos: Video[]): Promise<void> {

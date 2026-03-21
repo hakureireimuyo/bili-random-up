@@ -1,4 +1,4 @@
-import { getValue, setValue } from "../../database/bilibili-data.js";
+import { getValue, setValue } from "../../database/implementations/index.js";
 
 export interface Settings {
   cacheHours: number;

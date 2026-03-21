@@ -1,12 +1,11 @@
 import {
-  getStatsPageAllManualTags,
-  getStatsPageCategories,
-  getStatsPageCustomTags,
-  getStatsPageTagLibrary,
-  getStatsPageUPList,
-  getStatsPageUPTagCounts,
-  getStatsPageVideoCounts,
-  type StatsPageUPTagCache
+  getAllUPManualTags,
+  getCategoryLibrary,
+  getTagLibrary,
+  getUPTagCounts,
+  getValue,
+  loadUPList,
+  type UPTagCache
 } from "../../database/implementations/index.js";
 import { bindPageActions } from "./page-actions.js";
 import { addCategory, renderCategories } from "./category-manager.js";
@@ -18,8 +17,8 @@ import { refreshUpList } from "./up-list.js";
 
 export { countVideoTotals, countUpTags, colorFromTag } from "./helpers.js";
 
-async function hydrateTagState(state: StatsState, upTagCounts: StatsPageUPTagCache): Promise<Record<string, string[]>> {
-  const tagLibrary = await getStatsPageTagLibrary();
+async function hydrateTagState(state: StatsState, upTagCounts: UPTagCache): Promise<Record<string, string[]>> {
+  const tagLibrary = await getTagLibrary();
   state.upAutoTags = {};
   for (const [mid, tagData] of Object.entries(upTagCounts)) {
     state.upAutoTags[mid] = tagData.tags.map((tag) => {
@@ -28,7 +27,7 @@ async function hydrateTagState(state: StatsState, upTagCounts: StatsPageUPTagCac
     });
   }
 
-  const upManualTags = await getStatsPageAllManualTags();
+  const upManualTags = await getAllUPManualTags();
   state.upManualTagsMap = {};
   for (const [mid, tagIds] of Object.entries(upManualTags)) {
     state.upManualTagsMap[mid] = tagIds.map((tagId) => {
@@ -97,11 +96,17 @@ function bindInputs(state: StatsState): void {
 }
 
 async function loadState(state: StatsState): Promise<void> {
-  const upCache = (await getStatsPageUPList()) ?? ({ upList: [] } as UPCache);
-  const upTagCounts = await getStatsPageUPTagCounts();
-  const customTags = await getStatsPageCustomTags();
-  const videoCounts = await getStatsPageVideoCounts();
-  const categories = (await getStatsPageCategories()) as Category[];
+  const upCache = (await loadUPList()) ?? ({ upList: [] } as UPCache);
+  const upTagCounts = await getUPTagCounts();
+  const customTags = (await getValue<string[]>("customTags")) ?? [];
+  const videoCounts = (await getValue<Record<string, number>>("videoCounts")) ?? {};
+  const categoryLibrary = await getCategoryLibrary();
+  const tagLibrary = await getTagLibrary();
+  const categories = Object.values(categoryLibrary).map((category) => ({
+    id: category.id,
+    name: category.name,
+    tags: category.tag_ids.map((tagId) => tagLibrary[tagId]?.name ?? tagId)
+  })) as Category[];
 
   state.upTagCache = upTagCounts;
   state.currentUpList = upCache.upList ?? [];
