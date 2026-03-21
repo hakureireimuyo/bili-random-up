@@ -6,6 +6,9 @@ import { saveUPList } from "../../database/implementations/index.js";
 export const ALARM_UPDATE_UP_LIST = "update_up_list";
 export const ALARM_CLASSIFY_UPS = "classify_ups";
 export const ALARM_COLLECT_UP_PAGES = "collect_up_pages";
+export const ALARM_DAILY_INTEREST = "daily_interest";
+export const ALARM_WEEKLY_INTEREST = "weekly_interest";
+export const ALARM_MONTHLY_INTEREST = "monthly_interest";
 
 export interface AlarmLike {
   name: string;

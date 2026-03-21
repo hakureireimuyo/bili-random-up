@@ -197,6 +197,14 @@ button i {
   background: linear-gradient(135deg, #5c6369 0%, #4a5156 100%);
 }
 
+.btn-interest {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+}
+
+.btn-interest:hover {
+  background: linear-gradient(135deg, #0ea5e9 0%, #10b981 100%);
+}
+
 .section {
   margin-top: 20px;
   padding-top: 16px;

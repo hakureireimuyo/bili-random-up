@@ -124,7 +124,9 @@ export class InterestGraphBuilder {
       weight,
       tagIds: category.tagIds,
       color: category.color || this.assignColor(category.name),
-      icon: this.assignIcon(category.name)
+      icon: this.assignIcon(category.name),
+      createdAt: Date.now(),
+      lastUpdate: Date.now()
     });
 
     return nodeId;
@@ -193,7 +195,9 @@ export class InterestGraphBuilder {
       weight: score,
       tagIds: [tag.tagId],
       color: tag.color || this.assignColor(tag.name),
-      icon: tag.icon || this.assignIcon(tag.name)
+      icon: tag.icon || this.assignIcon(tag.name),
+      createdAt: Date.now(),
+      lastUpdate: Date.now()
     });
   }
 

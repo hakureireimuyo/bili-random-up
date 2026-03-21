@@ -95,7 +95,179 @@
 - `background -> IndexedDB store`
 - `page module -> repository.impl 直连`
 
-## 6. 功能实现优先级
+## 6. 新功能设计与实现原则
+
+所有新功能的设计与实现必须优先考虑解耦和抽象，确保代码具有可复用性和可扩展性。
+
+### 6.1 解耦优先原则
+
+**设计优先级：**
+1. **通用能力抽象**：优先识别功能中的通用能力，将其抽象为独立模块
+2. **接口隔离**：通过接口定义能力边界，降低模块间耦合
+3. **依赖注入**：通过构造函数或参数传递依赖，而非硬编码
+4. **特定需求封装**：将特定需求封装在独立的适配器或装饰器中
+
+**示例说明：**
+
+错误做法：
+```typescript
+// 直接在兴趣计算器中硬编码数据源
+async calculateInterestScore(tagId: string) {
+  const watchEvents = await this.watchEventRepo.getAllWatchEvents();
+  // ...
+}
+```
+
+正确做法：
+```typescript
+// 定义数据源接口
+interface IEventDataSource {
+  getWatchEvents(tagId: string, timeRange?: TimeRange): Promise<WatchEvent[]>;
+  getInteractionEvents(tagId: string, timeRange?: TimeRange): Promise<InteractionEvent[]>;
+}
+
+// 兴趣计算器依赖抽象接口
+class InterestCalculator {
+  constructor(
+    private dataSource: IEventDataSource,
+    private config: InterestCalculatorConfig
+  ) {}
+  
+  async calculateInterestScore(tagId: string): Promise<InterestScore> {
+    const watchEvents = await this.dataSource.getWatchEvents(tagId);
+    // ...
+  }
+}
+
+// 实现具体数据源
+class DatabaseEventDataSource implements IEventDataSource {
+  constructor(
+    private watchEventRepo: WatchEventRepository,
+    private interactionEventRepo: InteractionEventRepository
+  ) {}
+  
+  async getWatchEvents(tagId: string): Promise<WatchEvent[]> {
+    return this.watchEventRepo.getWatchEventsByTag(tagId);
+  }
+}
+```
+
+### 6.2 抽象层次设计
+
+**抽象层次：**
+1. **核心算法层**：纯函数，无副作用，可独立测试
+2. **业务逻辑层**：编排核心算法，处理业务规则
+3. **数据访问层**：封装数据存储操作
+4. **适配器层**：连接不同数据源或外部系统
+
+**设计要求：**
+- 每层只关注自己的职责，不越界
+- 上层依赖下层抽象，而非具体实现
+- 通过接口定义层间契约
+
+### 6.3 可复用性设计
+
+**识别可复用能力：**
+1. **数据转换**：格式化、过滤、映射等通用操作
+2. **计算逻辑**：数学计算、统计分析、趋势分析等
+3. **业务规则**：验证、评分、排序等通用规则
+4. **状态管理**：缓存、队列、批处理等通用模式
+
+**实现方式：**
+```typescript
+// 通用工具模块
+export class DataUtils {
+  static calculateMovingAverage(values: number[], window: number): number[] {
+    // 通用移动平均计算
+  }
+  
+  static applyDecay(values: number[], rate: number, time: number): number[] {
+    // 通用衰减计算
+  }
+}
+
+// 特定需求调用通用工具
+class InterestCalculator {
+  calculateTrend(history: InterestHistory[]): TrendType {
+    const scores = history.map(h => h.score);
+    const smoothed = DataUtils.calculateMovingAverage(scores, 7);
+    const changeRate = DataUtils.calculateChangeRate(smoothed);
+    return this.determineTrend(changeRate);
+  }
+}
+```
+
+### 6.4 配置驱动设计
+
+**配置优先原则：**
+1. 将可变参数提取为配置对象
+2. 提供默认配置，支持自定义覆盖
+3. 配置应可序列化，便于持久化
+
+**示例：**
+```typescript
+interface CalculatorConfig {
+  windowSize: number;
+  decayRate: number;
+  weights: {
+    shortTerm: number;
+    longTerm: number;
+  };
+}
+
+const DEFAULT_CONFIG: CalculatorConfig = {
+  windowSize: 7,
+  decayRate: 0.1,
+  weights: { shortTerm: 0.6, longTerm: 0.4 }
+};
+
+class Calculator {
+  constructor(private config: Partial<CalculatorConfig> = {}) {
+    this.config = { ...DEFAULT_CONFIG, ...config };
+  }
+}
+```
+
+### 6.5 插件化扩展
+
+**扩展点设计：**
+1. 定义清晰的扩展接口
+2. 提供默认实现
+3. 支持运行时注册和替换
+
+**示例：**
+```typescript
+interface ICalculationStrategy {
+  calculate(events: Event[]): number;
+}
+
+class InterestCalculator {
+  private strategies: Map<string, ICalculationStrategy> = new Map();
+  
+  registerStrategy(name: string, strategy: ICalculationStrategy) {
+    this.strategies.set(name, strategy);
+  }
+  
+  calculate(tagId: string, strategyName: string): number {
+    const strategy = this.strategies.get(strategyName);
+    if (!strategy) throw new Error(`Strategy not found: ${strategyName}`);
+    return strategy.calculate(events);
+  }
+}
+```
+
+### 6.6 实现检查清单
+
+在实现新功能前，必须确认：
+- [ ] 是否已识别出可复用的通用能力？
+- [ ] 是否已定义清晰的接口抽象？
+- [ ] 是否已将特定需求与通用逻辑分离？
+- [ ] 是否已将可变参数提取为配置？
+- [ ] 是否考虑了未来的扩展点？
+- [ ] 是否避免了硬编码依赖？
+- [ ] 是否便于单元测试？
+
+## 7. 功能实现优先级
 
 所有功能实现都要优先考虑现有代码是否已经能够完成目标，只有现有代码无法满足需求时，才编写新的内容。
 
@@ -110,7 +282,7 @@
 - 因为“更快”就绕过现有实现层。
 - 不检查现有代码就直接新建文件和新建体系。
 
-## 7. 模块职责与文件拆分规范
+## 8. 模块职责与文件拆分规范
 
 所有模块尽可能按功能分类，不在单个代码文件中实现过多功能。
 
@@ -130,7 +302,7 @@
 - 页面渲染逻辑放 UI 子模块。
 - 通用工具放工具模块。
 
-## 8. README 约束
+## 9. README 约束
 
 每个文件夹下存在的 `README.md` 都用于说明该目录的功能与职责范围，所有代码都必须遵守对应 README 的边界说明。
 
@@ -144,7 +316,7 @@
 - `README.md` 不是可选文档，而是目录级约束的一部分。
 - 代码结构发生变化但 README 不更新，视为实现不完整。
 
-## 9. 实际执行准则
+## 10. 实际执行准则
 
 AI 在编写代码时，应默认遵守以下顺序：
 
@@ -156,7 +328,7 @@ AI 在编写代码时，应默认遵守以下顺序：
 6. 如果长期模型确实不足，再新增数据库类型。
 7. 如果目录职责被扩展，最后更新对应 `README.md`。
 
-## 10. 目标
+## 11. 目标
 
 本规范最终服务于以下目标：
 - 减少重复代码。

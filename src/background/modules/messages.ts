@@ -17,6 +17,7 @@ import { handleUPPageCollected, getPageClassifyProgress, startAutoClassification
 import { updateUpListTask } from "./up-list.js";
 import { proxyApiRequest } from "./proxy.js";
 import { updateWatchStats, initializeVideoInfo, processUPInfo, processVideoTags } from "./watch-stats.js";
+import { createInterestManager } from "./interest-manager.js";
 
 declare const chrome: {
   tabs?: {
@@ -77,6 +78,10 @@ export async function handleMessage(
       watch_time: payload.watchedSeconds ?? 0,
       duration: payload.duration ?? 0
     });
+
+    // 触发兴趣计算
+    const interestManager = createInterestManager();
+    await interestManager.handleWatchEvent(payload.tags ?? []);
     
 
 
@@ -337,6 +342,36 @@ export async function handleMessage(
 
   if (message.type === "get_classify_progress") {
     return getPageClassifyProgress();
+  }
+
+  if (message.type === "get_interest_stats") {
+    const interestManager = createInterestManager();
+    const stats = await interestManager.getInterestStats();
+    return stats;
+  }
+
+  if (message.type === "initialize_interest_system") {
+    const interestManager = createInterestManager();
+    await interestManager.initialize();
+    return { success: true };
+  }
+
+  if (message.type === "run_daily_interest_task") {
+    const interestManager = createInterestManager();
+    await interestManager.runDailyTask();
+    return { success: true };
+  }
+
+  if (message.type === "run_weekly_interest_task") {
+    const interestManager = createInterestManager();
+    await interestManager.runWeeklyTask();
+    return { success: true };
+  }
+
+  if (message.type === "run_monthly_interest_task") {
+    const interestManager = createInterestManager();
+    await interestManager.runMonthlyTask();
+    return { success: true };
   }
 
   return null;
