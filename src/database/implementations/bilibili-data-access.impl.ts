@@ -11,7 +11,6 @@ import type {
   InterestProfile,
   TagLibrary,
   UPCache,
-  UPFaceDataCacheEntry,
   UPTagCache,
   UPTagWeights,
   UP,
@@ -52,8 +51,53 @@ function videoCacheKey(mid: number): string {
   return `video_cache:${mid}`;
 }
 
-function faceCacheKey(mid: number): string {
-  return `up_face:${mid}`;
+function isDataUrl(value: string | undefined): boolean {
+  return Boolean(value && value.startsWith("data:"));
+}
+
+function toBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  let binary = "";
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    const chunk = bytes.subarray(index, index + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+  return btoa(binary);
+}
+
+async function fetchAvatarAsDataUrl(url: string): Promise<string | null> {
+  if (!url || isDataUrl(url) || typeof fetch === "undefined") {
+    return url || null;
+  }
+
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      return null;
+    }
+    const contentType = response.headers.get("content-type") || "image/png";
+    const buffer = await response.arrayBuffer();
+    return `data:${contentType};base64,${toBase64(buffer)}`;
+  } catch (error) {
+    console.warn("[DB] Failed to cache avatar data:", url, error);
+    return null;
+  }
+}
+
+async function resolveAvatarValue(up: UP, existingAvatar?: string): Promise<string> {
+  if (isDataUrl(up.face_data)) {
+    return up.face_data as string;
+  }
+  if (isDataUrl(up.face)) {
+    return up.face;
+  }
+  if (isDataUrl(existingAvatar)) {
+    return existingAvatar as string;
+  }
+
+  const avatarData = await fetchAvatarAsDataUrl(up.face);
+  return avatarData ?? up.face ?? existingAvatar ?? "";
 }
 
 function toLegacyUP(creator: DBCreator): UP {
@@ -67,12 +111,12 @@ function toLegacyUP(creator: DBCreator): UP {
   };
 }
 
-function toDBCreator(up: UP): DBCreator {
+async function toDBCreator(up: UP, existingAvatar?: string): Promise<DBCreator> {
   return {
     creatorId: String(up.mid),
     platform: BILIBILI,
     name: up.name,
-    avatar: up.face_data || up.face,
+    avatar: await resolveAvatarValue(up, existingAvatar),
     isLogout: 0,
     description: up.sign,
     createdAt: Date.now(),
@@ -105,7 +149,7 @@ async function ensureCreator(mid: number): Promise<DBCreator> {
   if (existing) {
     return existing;
   }
-  const creator = toDBCreator({
+  const creator = await toDBCreator({
     mid,
     name: "",
     face: "",
@@ -345,9 +389,10 @@ export async function saveUPList(upList: UP[]): Promise<void> {
   }
   for (const up of upList) {
     const existingCreator = await creatorRepository.getCreator(String(up.mid), BILIBILI);
+    const nextBaseCreator = await toDBCreator(up, existingCreator?.avatar);
     const nextCreator = {
-      ...(existingCreator ?? toDBCreator(up)),
-      ...toDBCreator(up),
+      ...(existingCreator ?? nextBaseCreator),
+      ...nextBaseCreator,
       tagWeights: existingCreator?.tagWeights ?? []
     };
     await creatorRepository.upsertCreator(nextCreator);
@@ -406,12 +451,17 @@ export async function updateInterest(tag: string, score: number): Promise<UserIn
 }
 
 export async function saveUPFaceData(mid: number, faceData: string): Promise<void> {
-  await setAppState(faceCacheKey(mid), { mid, face_data: faceData, lastUpdate: Date.now() } satisfies UPFaceDataCacheEntry);
+  const creator = await creatorRepository.getCreator(String(mid), BILIBILI);
+  if (!creator) {
+    return;
+  }
+  await creatorRepository.upsertCreator({ ...creator, avatar: faceData });
+  invalidateCreatorCache();
 }
 
 export async function getUPFaceData(mid: number): Promise<string | null> {
-  const entry = await getAppState<UPFaceDataCacheEntry>(faceCacheKey(mid));
-  return entry?.face_data ?? null;
+  const creator = await creatorRepository.getCreator(String(mid), BILIBILI);
+  return creator?.avatar ?? null;
 }
 
 export async function saveMultipleUPFaceData(faceDataMap: Record<number, string>): Promise<void> {
@@ -421,7 +471,12 @@ export async function saveMultipleUPFaceData(faceDataMap: Record<number, string>
 }
 
 export async function clearUPFaceData(mid: number): Promise<void> {
-  await setAppState(faceCacheKey(mid), null);
+  const creator = await creatorRepository.getCreator(String(mid), BILIBILI);
+  if (!creator) {
+    return;
+  }
+  await creatorRepository.upsertCreator({ ...creator, avatar: "" });
+  invalidateCreatorCache();
 }
 
 export async function getClassifyStatus(): Promise<{ lastUpdate: number } | null> {

@@ -124,6 +124,14 @@ export async function processUPInfo(
     return;
   }
 
+  const getValueFn = options.getValueFn ?? ((key: string) => getValue(key));
+  const settings = (await getValueFn("settings")) as { userId?: number } | null;
+  const currentUserId = settings?.userId;
+  if (currentUserId && payload.upMid === currentUserId) {
+    console.log("[WatchStats] Skipping current user record:", payload.upMid);
+    return;
+  }
+
   console.log("[WatchStats] Processing UP info:", payload.upMid);
   const cache = await loadUPList();
   const existingUP = cache?.upList.find(up => up.mid === payload.upMid);

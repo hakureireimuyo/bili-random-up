@@ -23,6 +23,18 @@ function detectVideoElement(): HTMLVideoElement | null {
   return document.querySelector("video");
 }
 
+function extractMidFromSpaceLink(link: string | null | undefined): number | undefined {
+  if (!link) {
+    return undefined;
+  }
+  const match = link.match(/space\.bilibili\.com\/(\d+)/);
+  if (!match) {
+    return undefined;
+  }
+  const mid = Number(match[1]);
+  return Number.isFinite(mid) && mid > 0 ? mid : undefined;
+}
+
 // 通用的发送消息函数
 function sendMessage(type: string, event: WatchProgress, logPrefix: string): void {
   console.log(`[Tracker] ${logPrefix}`, event);
@@ -104,10 +116,20 @@ function extractVideoMeta(): VideoMeta {
   if (typeof stateMid === "number") {
     upMid = stateMid;
   } else {
-    const upLink = document.querySelector('a[href*="space.bilibili.com"]') as HTMLAnchorElement | null;
-    const match = upLink?.href?.match(/space\.bilibili\.com\/(\d+)/);
-    if (match) {
-      upMid = Number(match[1]);
+    const ownerSelectors = [
+      ".up-name[href*='space.bilibili.com']",
+      ".author-name[href*='space.bilibili.com']",
+      ".staff-name[href*='space.bilibili.com']",
+      ".up-detail-top a[href*='space.bilibili.com']",
+      ".video-info-author a[href*='space.bilibili.com']"
+    ];
+    for (const selector of ownerSelectors) {
+      const upLink = document.querySelector(selector) as HTMLAnchorElement | null;
+      const mid = extractMidFromSpaceLink(upLink?.href);
+      if (mid) {
+        upMid = mid;
+        break;
+      }
     }
   }
 

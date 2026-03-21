@@ -172,6 +172,20 @@ export async function handleUPPageCollected(
     return;
   }
 
+  const getValueFn = options.getValueFn ?? ((key: string) => getValue(key));
+  const settings = (await getValueFn("settings")) as { userId?: number } | null;
+  const currentUserId = settings?.userId;
+  if (currentUserId && payload.mid === currentUserId) {
+    console.log("[Background] Ignore current user page collection:", payload.mid);
+    return;
+  }
+
+  const tabId = activeCollectionTabs.get(payload.mid);
+  if (!pageClassifyActive || !tabId) {
+    console.log("[Background] Ignore unsolicited UP page collection:", payload.mid);
+    return;
+  }
+
   console.log("[Background] UP page data collected:", {
     mid: payload.mid,
     name: payload.name,
@@ -180,10 +194,7 @@ export async function handleUPPageCollected(
   });
   console.log("[Background] Classification queue:", classificationQueue);
   console.log("[Background] Active collection tabs:", Array.from(activeCollectionTabs.entries()));
-  const tabId = activeCollectionTabs.get(payload.mid);
-  if (tabId) {
-    activeCollectionTabs.delete(payload.mid);
-  }
+  activeCollectionTabs.delete(payload.mid);
 
   if (!payload.name && (!payload.videos || payload.videos.length === 0)) {
     console.log("[Background] UP", payload.mid, "appears to be invalid, skipping...");
