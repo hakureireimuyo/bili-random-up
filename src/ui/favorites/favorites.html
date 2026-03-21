@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>收藏视频 - B站发现</title>
+  <link rel="stylesheet" href="favorites.css">
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <h1 class="title">收藏视频</h1>
+      <div class="actions">
+        <button id="syncBtn" class="btn btn-primary">同步收藏</button>
+      </div>
+    </header>
+
+    <div class="collection-tabs" id="collectionTabs">
+      <div class="loading-tabs">
+        <div class="spinner"></div>
+        <p>加载收藏夹...</p>
+      </div>
+    </div>
+
+    <div class="search-bar">
+      <input type="text" id="searchInput" class="search-input" placeholder="搜索收藏视频...">
+      <select id="tagFilter" class="filter-select">
+        <option value="">所有标签</option>
+      </select>
+      <select id="creatorFilter" class="filter-select">
+        <option value="">所有UP主</option>
+      </select>
+      <button id="searchBtn" class="btn btn-secondary">搜索</button>
+    </div>
+
+    <div class="video-list" id="videoList">
+      <div class="loading" id="loading">
+        <div class="spinner"></div>
+        <p>加载中...</p>
+      </div>
+      <div class="empty" id="empty" style="display: none;">
+        <p>暂无收藏视频</p>
+      </div>
+      <div class="error" id="error" style="display: none;">
+        <p id="errorMessage"></p>
+      </div>
+    </div>
+
+    <div class="pagination" id="pagination" style="display: none;">
+      <button id="prevPage" class="btn btn-secondary" disabled>上一页</button>
+      <span id="pageInfo">第 1 页</span>
+      <button id="nextPage" class="btn btn-secondary" disabled>下一页</button>
+    </div>
+  </div>
+
+  <script src="favorites.js"></script>
+</body>
+</html>

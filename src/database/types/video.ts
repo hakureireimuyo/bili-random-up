@@ -53,6 +53,11 @@ export interface Video {
    */
   coverUrl?: string;
   /**
+   * 视频封面图片
+   * 存储图片信息（base64格式），不存储URL
+   */
+  picture?: string;
+  /**
    * 视频URL
    */
   videoUrl?: string;

@@ -1,4 +1,4 @@
-import { getUPInfo, getUPVideos, getVideoTags } from "../../api/bili-api.js";
+import { getUPInfo, getUPVideos, getVideoTags, getVideoDetail, getVideoTagsDetail } from "../../api/bili-api.js";
 import { randomUP, randomVideo, recommendUP, recommendVideo, updateInterestFromWatch } from "../../engine/recommender.js";
 import { 
   getValue, 
@@ -18,6 +18,9 @@ import { updateUpListTask } from "./up-list.js";
 import { proxyApiRequest } from "./proxy.js";
 import { updateWatchStats, initializeVideoInfo, processUPInfo, processVideoTags } from "./watch-stats.js";
 import { createInterestManager } from "./interest-manager.js";
+import { syncFavoriteVideos, searchFavoriteVideos } from "./favorite-sync.js";
+import { CollectionRepository } from "../../database/implementations/collection-repository.impl.js";
+import { Platform, TagSource } from "../../database/types/base.js";
 
 declare const chrome: {
   tabs?: {
@@ -46,6 +49,8 @@ export async function handleMessage(
   const updateInterestFromWatchFn = options.updateInterestFromWatchFn ?? updateInterestFromWatch;
   const randomUPFn = options.randomUPFn ?? randomUP;
   const randomVideoFn = options.randomVideoFn ?? randomVideo;
+
+  const collectionRepository = new CollectionRepository();
 
   if (!message || !message.type) {
     return;
@@ -132,6 +137,15 @@ export async function handleMessage(
     await setValueFn("userId", payload.uid);
     console.log("[Background] Updated userId", payload.uid);
     return null;
+  }
+
+  if (message.type === "get_value") {
+    const payload = message.payload as { key?: string };
+    if (!payload?.key) {
+      return { success: false, error: "Missing key" };
+    }
+    const value = await getValueFn(payload.key);
+    return { success: true, data: value };
   }
 
   const tabs = options.tabs ?? (typeof chrome !== "undefined" ? chrome.tabs : undefined);
@@ -372,6 +386,173 @@ export async function handleMessage(
     const interestManager = createInterestManager();
     await interestManager.runMonthlyTask();
     return { success: true };
+  }
+
+  // 收藏相关消息处理
+  if (message.type === "favorite_action") {
+    const payload = message.payload as { bvid?: string; action?: "add" | "remove"; title?: string };
+    if (!payload?.bvid || !payload?.action) {
+      return { success: false, error: "Invalid favorite action payload" };
+    }
+    
+    try {
+      if (payload.action === "add") {
+        // 获取视频详细信息
+        const videoDetail = await getVideoDetail(payload.bvid, undefined, { fallbackRequest: proxyApiRequest });
+        if (!videoDetail) {
+          return { success: false, error: "Failed to get video detail" };
+        }
+        
+        // 获取视频标签
+        const videoTags = await getVideoTagsDetail(payload.bvid, { fallbackRequest: proxyApiRequest });
+        
+        // 保存视频信息到数据库
+        const { VideoRepository, CreatorRepository, TagRepository } = await import("../../database/implementations/index.js");
+        const videoRepo = new VideoRepository();
+        const creatorRepo = new CreatorRepository();
+        const tagRepo = new TagRepository();
+        
+        // 确保UP主存在
+        const creatorId = videoDetail.owner.mid.toString();
+        let creator = await creatorRepo.getCreator(creatorId, Platform.BILIBILI);
+        if (!creator) {
+          await creatorRepo.upsertCreator({
+            creatorId,
+            platform: Platform.BILIBILI,
+            name: videoDetail.owner.name,
+            avatar: "",
+            description: "",
+            isFollowing: 0,
+            createdAt: Date.now(),
+            followTime: Date.now(),
+            isLogout:0,
+            tagWeights:[]
+          });
+        }
+        
+        // 确保标签存在
+        const tagIds: string[] = [];
+        for (const videoTag of videoTags) {
+          const tagId = videoTag.tag_id.toString();
+          let tag = await tagRepo.getTag(tagId);
+          if (!tag) {
+            await tagRepo.createTag({
+              name: videoTag.tag_name,
+              source: TagSource.USER,
+              createdAt: Date.now(),
+            });
+          }
+          tagIds.push(tagId);
+        }
+        
+        // 保存视频信息
+        await videoRepo.upsertVideo({
+          videoId: payload.bvid,
+          platform: Platform.BILIBILI,
+          creatorId,
+          title: videoDetail.title,
+          description: videoDetail.desc,
+          duration: 0,
+          publishTime: videoDetail.pubdate * 1000,
+          tags: tagIds,
+          createdAt: Date.now(),
+          coverUrl: videoDetail.pic
+        });
+        
+        // 添加到收藏夹
+        const { CollectionRepository, CollectionItemRepository } = await import("../../database/implementations/index.js");
+        const collectionRepo = new CollectionRepository();
+        const collectionItemRepo = new CollectionItemRepository();
+        
+        let collection = await collectionRepo.getCollection("bilibili_favorites");
+        if (!collection) {
+          const collectionId = await collectionRepo.createCollection({
+            platform: Platform.BILIBILI,
+            name: "B站收藏夹",
+            description: "从B站同步的收藏视频",
+            videoIds: [],
+            createdAt: Date.now(),
+            lastUpdate: Date.now()
+          });
+          collection = await collectionRepo.getCollection(collectionId);
+        }
+        
+        if (collection) {
+          const isInCollection = await collectionItemRepo.isVideoInCollection(
+            collection.collectionId,
+            payload.bvid
+          );
+          
+          if (!isInCollection) {
+            await collectionItemRepo.addVideoToCollection(
+              collection.collectionId,
+              payload.bvid,
+              Platform.BILIBILI
+            );
+          }
+        }
+      } else if (payload.action === "remove") {
+        // 从收藏夹移除视频
+        const { CollectionRepository, CollectionItemRepository } = await import("../../database/implementations/index.js");
+        const collectionRepo = new CollectionRepository();
+        const collectionItemRepo = new CollectionItemRepository();
+        
+        const collection = await collectionRepo.getCollection("bilibili_favorites");
+        if (collection) {
+          await collectionItemRepo.removeVideoFromCollection(
+            collection.collectionId,
+            payload.bvid
+          );
+        }
+      }
+      
+      return { success: true };
+    } catch (error) {
+      console.error("[Background] Error handling favorite action:", error);
+      return { success: false, error: String(error) };
+    }
+  }
+
+  if (message.type === "sync_favorite_videos") {
+    const payload = message.payload as { uid?: number };
+    if (!payload?.uid) {
+      return { success: false, error: "Missing uid" };
+    }
+    
+    try {
+      const count = await syncFavoriteVideos(payload.uid);
+      return { success: true, count };
+    } catch (error) {
+      console.error("[Background] Error syncing favorite videos:", error);
+      return { success: false, error: String(error) };
+    }
+  }
+
+  if (message.type === "get_collections") {
+    try {
+      const collections = await collectionRepository.getAllCollections(Platform.BILIBILI);
+      return { success: true, collections };
+    } catch (error) {
+      console.error("[Background] Error getting collections:", error);
+      return { success: false, error: String(error) };
+    }
+  }
+
+  if (message.type === "search_favorite_videos") {
+    const payload = message.payload as { collectionId?: string; keyword?: string; tagId?: string; creatorId?: string };
+    
+    try {
+      const videos = await searchFavoriteVideos(
+        payload.collectionId,
+        payload.keyword,
+        payload.tagId,
+        payload.creatorId
+      );
+      return { success: true, videos };
+    } catch (error) {
+      console.error("[Background] Error searching favorite videos:", error);
+      return { success: false, error: String(error) };
+    }
   }
 
   return null;

@@ -162,6 +162,7 @@ function bindButtons(): void {
   document.getElementById("btn-random-up")?.addEventListener("click", () => void jumpToRandomUP());
   document.getElementById("btn-stats")?.addEventListener("click", () => openExtensionPage("ui/stats/stats.html"));
   document.getElementById("btn-watch-stats")?.addEventListener("click", () => openExtensionPage("ui/watch-stats/watch-stats.html"));
+  document.getElementById("btn-favorites")?.addEventListener("click", () => openExtensionPage("ui/favorites/favorites.html"));
   document.getElementById("btn-interest-stats")?.addEventListener("click", () => openExtensionPage("ui/interest-stats/interest-stats.html"));
   document.getElementById("btn-settings")?.addEventListener("click", () => openExtensionPage("ui/options/options.html"));
 }

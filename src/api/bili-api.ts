@@ -375,21 +375,15 @@ async function md5(str: string): Promise<string> {
 export interface VideoDetail {
   bvid: string;
   aid: number;
-  title: string;
   pic: string;
+  title: string;
   desc: string;
-  owner: {
-    name: string;
-    mid: number;
-  };
+  duration: number;
   pubdate: number;
-  stat: {
-    view: number;
-    danmaku: number;
-    reply: number;
-    favorite: number;
-    coin: number;
-    share: number;
+  owner: {
+    mid: number;
+    name: string;
+    face: string;
   };
 }
 
@@ -467,9 +461,13 @@ export async function getRelatedVideos(
 // ==================== 收藏夹 API ====================
 
 export interface FavoriteFolder {
-  media_id: number;
+  id: number;
+  fid: number;
+  mid: number;
+  attr: number;
   title: string;
-  count: number;
+  fav_state: number;
+  media_count: number;
 }
 
 /**
@@ -489,12 +487,51 @@ export async function getFavoriteFolders(
 export interface FavoriteVideo {
   bvid: string;
   title: string;
+  intro: string;
   cover: string;
   upper: {
-    name: string;
     mid: number;
+    name: string;
+    face: string;
   };
   pubtime: number;
+}
+
+/**
+ * 获取所有收藏夹的视频
+ * @param up_mid 用户ID
+ * @param options API请求选项
+ * @returns 所有收藏夹的视频列表
+ */
+export async function getAllFavoriteVideos(
+  up_mid: number,
+  options: ApiRequestOptions = {}
+): Promise<FavoriteVideo[]> {
+  // 获取所有收藏夹
+  const folders = await getFavoriteFolders(up_mid, options);
+  const allVideos: FavoriteVideo[] = [];
+
+  // 遍历所有收藏夹，获取其中的视频
+  for (const folder of folders) {
+    let page = 1;
+    const pageSize = 20;
+
+    while (true) {
+      const videos = await getFavoriteVideos(folder.id, page, pageSize, options);
+      if (videos.length === 0) {
+        break;
+      }
+      allVideos.push(...videos);
+      
+      // 如果获取的视频数小于页大小，说明已经没有更多视频
+      if (videos.length < pageSize) {
+        break;
+      }
+      page++;
+    }
+  }
+
+  return allVideos;
 }
 
 /**
