@@ -9,6 +9,15 @@ import { Platform, Timestamp, ID } from './base.js';
  * 收藏夹（Collection）
  * 用户创建的视频收藏列表
  */
+/**
+ * 收藏夹类型
+ */
+export type CollectionType = 'user' | 'subscription';
+
+/**
+ * 收藏夹（Collection）
+ * 用户创建的视频收藏列表或订阅的合集
+ */
 export interface Collection {
   /**
    * 收藏夹唯一ID
@@ -55,6 +64,12 @@ export interface Collection {
    * 用于收藏夹分类
    */
   tags?: ID[];
+  /**
+   * 收藏夹类型
+   * user: 用户自己创建的收藏夹
+   * subscription: 订阅的合集（别人创建的）
+   */
+  type?: CollectionType;
 }
 
 /**

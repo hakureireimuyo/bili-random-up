@@ -74,15 +74,17 @@ export interface IVideoDataSource {
  */
 export interface IFavoriteDataSource {
   /** 获取所有收藏视频 */
-  getAllFavoriteVideos(up_mid: number, shouldStop?: () => Promise<boolean>): Promise<Array<{ bvid: string; intro: string }>>;
+  getAllFavoriteVideos(up_mid: number, shouldStop?: () => Promise<boolean>): Promise<Array<{ bvid: string; intro?: string }>>;
   /** 获取收藏夹列表 */
   getFavoriteFolders(up_mid: number): Promise<Array<{ id: number; title: string; media_count: number }>>;
   /** 获取收藏夹视频 */
-  getFavoriteVideos(media_id: number, pn: number, ps: number): Promise<Array<{ bvid: string; intro: string }>>;
+  getFavoriteVideos(media_id: number, pn: number, ps: number): Promise<Array<{ bvid: string; intro?: string }>>;
   /** 获取用户订阅的合集列表 */
   getCollectedFolders(up_mid: number): Promise<Array<{ id: number; title: string; media_count: number; upper: { mid: number; name: string } }>>;
   /** 获取订阅收藏夹视频 */
-  getCollectedVideos(media_id: number, pn: number, ps: number): Promise<Array<{ bvid: string; intro: string }>>;
+  getCollectedVideos(media_id: number, pn: number, ps: number): Promise<Array<{ bvid: string; intro?: string }>>;
+  /** 获取订阅合集视频 */
+  getSeasonVideos(season_id: number, pn: number, ps: number): Promise<Array<{ bvid: string; intro?: string }>>;
 }
 
 /**

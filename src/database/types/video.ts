@@ -61,6 +61,11 @@ export interface Video {
    * 视频URL
    */
   videoUrl?: string;
+  /**
+   * 是否失效
+   * 标识视频是否已失效（如被删除、下架等）
+   */
+  isInvalid?: boolean;
 }
 
 /**

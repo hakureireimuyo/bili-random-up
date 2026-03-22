@@ -61,11 +61,12 @@ export class BiliApiFavoriteDataSource implements IFavoriteDataSource {
   private lastRequestTime: number = 0;
 
   constructor(
-    private getAllFavoriteVideosFn: (up_mid: number) => Promise<Array<{ bvid: string; intro: string }>>,
+    private getAllFavoriteVideosFn: (up_mid: number) => Promise<Array<{ bvid: string; intro?: string }>>,
     private getFavoriteFoldersFn?: (up_mid: number) => Promise<Array<{ id: number; title: string; media_count: number }>>,
-    private getFavoriteVideosFn?: (media_id: number, pn: number, ps: number) => Promise<Array<{ bvid: string; intro: string }>>,
+    private getFavoriteVideosFn?: (media_id: number, pn: number, ps: number) => Promise<Array<{ bvid: string; intro?: string }>>,
     private getCollectedFoldersFn?: (up_mid: number) => Promise<CollectedFolder[]>,
-    private getCollectedVideosFn?: (media_id: number, pn: number, ps: number) => Promise<Array<{ bvid: string; intro: string }>>,
+    private getCollectedVideosFn?: (media_id: number, pn: number, ps: number) => Promise<Array<{ bvid: string; intro?: string }>>,
+    private getSeasonVideosFn?: (season_id: number, pn: number, ps: number) => Promise<Array<{ bvid: string; intro?: string }>>,
     requestInterval?: number
   ) {
     if (requestInterval !== undefined) {
@@ -91,7 +92,7 @@ export class BiliApiFavoriteDataSource implements IFavoriteDataSource {
     console.log(`[BiliApiFavoriteDataSource] Request interval updated: ${this.lastRequestTime}`);
   }
 
-  async getAllFavoriteVideos(up_mid: number, shouldStop?: () => Promise<boolean>): Promise<Array<{ bvid: string; intro: string }>> {
+  async getAllFavoriteVideos(up_mid: number, shouldStop?: () => Promise<boolean>): Promise<Array<{ bvid: string; intro?: string }>> {
     console.log(`[BiliApiFavoriteDataSource] Fetching all favorite videos for user ${up_mid}`);
     console.log(`[BiliApiFavoriteDataSource] shouldStop function provided: ${!!shouldStop}`);
 
@@ -99,7 +100,7 @@ export class BiliApiFavoriteDataSource implements IFavoriteDataSource {
     const folders = await this.getFavoriteFolders(up_mid);
     console.log(`[BiliApiFavoriteDataSource] Found ${folders.length} folders`);
 
-    const allVideos: Array<{ bvid: string; intro: string }> = [];
+    const allVideos: Array<{ bvid: string; intro?: string }> = [];
 
     // 遍历所有收藏夹，获取其中的视频
     for (const folder of folders) {
@@ -150,6 +151,24 @@ export class BiliApiFavoriteDataSource implements IFavoriteDataSource {
     return allVideos;
   }
 
+  /**
+ * 获取订阅合集视频
+ * @param season_id 合集ID
+ * @param pn 页码
+ * @param ps 每页数量
+ */
+async getSeasonVideos(season_id: number, pn: number, ps: number): Promise<Array<{ bvid: string; intro?: string }>> {
+  console.log(`[BiliApiFavoriteDataSource] getSeasonVideos called: season_id=${season_id}, pn=${pn}, ps=${ps}`);
+  if (!this.getSeasonVideosFn) {
+    throw new Error("getSeasonVideosFn not provided");
+  }
+  await this.ensureRequestInterval();
+  console.log(`[BiliApiFavoriteDataSource] Calling getSeasonVideosFn`);
+  const result = await this.getSeasonVideosFn(season_id, pn, ps);
+  console.log(`[BiliApiFavoriteDataSource] getSeasonVideosFn returned ${result.length} videos`);
+  return result;
+}
+
   async getFavoriteFolders(up_mid: number): Promise<Array<{ id: number; title: string; media_count: number }>> {
     if (!this.getFavoriteFoldersFn) {
       throw new Error("getFavoriteFoldersFn not provided");
@@ -158,7 +177,7 @@ export class BiliApiFavoriteDataSource implements IFavoriteDataSource {
     return this.getFavoriteFoldersFn(up_mid);
   }
 
-  async getFavoriteVideos(media_id: number, pn: number, ps: number): Promise<Array<{ bvid: string; intro: string }>> {
+  async getFavoriteVideos(media_id: number, pn: number, ps: number): Promise<Array<{ bvid: string; intro?: string }>> {
     console.log(`[BiliApiFavoriteDataSource] getFavoriteVideos called: media_id=${media_id}, pn=${pn}, ps=${ps}`);
     if (!this.getFavoriteVideosFn) {
       throw new Error("getFavoriteVideosFn not provided");
@@ -188,12 +207,14 @@ export class BiliApiFavoriteDataSource implements IFavoriteDataSource {
     }));
   }
 
-  async getCollectedVideos(media_id: number, pn: number, ps: number): Promise<Array<{ bvid: string; intro: string }>> {
+  async getCollectedVideos(media_id: number, pn: number, ps: number): Promise<Array<{ bvid: string; intro?: string }>> {
     if (!this.getCollectedVideosFn) {
       throw new Error("getCollectedVideosFn not provided");
     }
     await this.ensureRequestInterval();
     return this.getCollectedVideosFn(media_id, pn, ps);
   }
+
+
 }
 

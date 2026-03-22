@@ -566,15 +566,27 @@ export async function getCollectedFolders(
 export interface FavoriteVideo {
   bvid: string;
   title: string;
-  intro: string;
+  intro?: string; // 改为可选字段
   cover: string;
   upper: {
     mid: number;
     name: string;
-    face: string;
+    face?: string; // 改为可选字段
   };
   pubtime: number;
+  id?: number; // 添加可选字段
+  duration?: number; // 添加可选字段
+  cnt_info?: { // 添加可选字段
+    collect: number;
+    play: number;
+    danmaku: number;
+    vt: number;
+  };
+  enable_vt?: number; // 添加可选字段
+  vt_display?: string; // 添加可选字段
+  is_self_view?: boolean; // 添加可选字段
 }
+
 
 /**
  * 获取所有收藏夹的视频
@@ -632,7 +644,7 @@ export async function getFavoriteVideos(
 }
 
 /**
- * 获取订阅收藏夹视频
+ * 获取收藏夹视频
  * @param media_id 收藏夹ID
  * @param pn 页码
  * @param ps 每页数量
@@ -648,6 +660,33 @@ export async function getCollectedVideos(
   const data = await apiRequest<{ data?: { medias?: FavoriteVideo[] } }>(url, options);
   return data?.data?.medias ?? [];
 }
+
+/**
+ * 获取订阅合集视频
+ * @param season_id 合集ID
+ * @param pn 页码
+ * @param ps 每页数量
+ * @param options API请求选项
+ */
+export async function getSeasonVideos(
+  season_id: number,
+  pn = 1,
+  ps = 20,
+  options: ApiRequestOptions = {}
+): Promise<FavoriteVideo[]> {
+  const url = `https://api.bilibili.com/x/space/fav/season/list?season_id=${season_id}&pn=${pn}&ps=${ps}&web_location=333.1387`;
+  const data = await apiRequest<{ data?: { medias?: FavoriteVideo[]; info?: any } }>(url, options);
+  
+  // 订阅合集API返回的数据结构中，视频列表在 medias 字段中
+  const videos = data?.data?.medias ?? [];
+  
+  // 订阅合集API返回的数据中没有 intro 字段，需要添加默认值
+  return videos.map(video => ({
+    ...video,
+    intro: video.intro || video.title // 如果没有 intro，使用 title 作为默认值
+  }));
+}
+
 
 // ==================== 关注系统 API ====================
 

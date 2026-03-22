@@ -45,7 +45,7 @@ export class VideoRepository implements IVideoRepository {
       STORE_NAMES.VIDEOS,
       videoIds
     );
-    return allVideos.filter(v => v.platform === platform);
+    return allVideos.filter(v => v.platform === platform && !v.isInvalid);
   }
 
   /**
@@ -62,7 +62,7 @@ export class VideoRepository implements IVideoRepository {
       creatorId
     );
 
-    const filtered = allVideos.filter(v => v.platform === platform);
+    const filtered = allVideos.filter(v => v.platform === platform && !v.isInvalid);
     const sorted = filtered.sort((a, b) => b.publishTime - a.publishTime);
 
     const start = pagination.page * pagination.pageSize;
@@ -89,7 +89,7 @@ export class VideoRepository implements IVideoRepository {
     const allVideos = await DBUtils.getAll<Video>(STORE_NAMES.VIDEOS);
 
     const filtered = allVideos.filter(v => 
-      v.platform === platform && v.tags.some(tag => tagIds.includes(tag))
+      v.platform === platform && !v.isInvalid && v.tags.some(tag => tagIds.includes(tag))
     );
 
     const sorted = filtered.sort((a, b) => b.publishTime - a.publishTime);
@@ -118,7 +118,7 @@ export class VideoRepository implements IVideoRepository {
     const allVideos = await DBUtils.getAll<Video>(STORE_NAMES.VIDEOS);
 
     const filtered = allVideos.filter(v =>
-      v.platform === platform &&
+      v.platform === platform && !v.isInvalid &&
       v.publishTime >= timeRange.startTime &&
       v.publishTime <= timeRange.endTime
     );
@@ -154,8 +154,10 @@ export class VideoRepository implements IVideoRepository {
 
     const lowerKeyword = keyword.toLowerCase();
     const filtered = allVideos.filter(v =>
-      v.title.toLowerCase().includes(lowerKeyword) ||
-      v.description.toLowerCase().includes(lowerKeyword)
+      !v.isInvalid && (
+        v.title.toLowerCase().includes(lowerKeyword) ||
+        v.description.toLowerCase().includes(lowerKeyword)
+      )
     );
 
     const sorted = filtered.sort((a, b) => b.publishTime - a.publishTime);

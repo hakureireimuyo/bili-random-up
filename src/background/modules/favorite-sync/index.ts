@@ -4,7 +4,7 @@
  * 负责从B站同步收藏数据到本地数据库
  */
 
-import { getAllFavoriteVideos, getVideoDetail, getVideoTagsDetail, getFavoriteFolders, getFavoriteVideos, getCollectedFolders, getCollectedVideos } from "../../../api/bili-api.js";
+import { getAllFavoriteVideos, getVideoDetail, getVideoTagsDetail, getFavoriteFolders, getFavoriteVideos, getCollectedFolders, getCollectedVideos, getSeasonVideos } from "../../../api/bili-api.js";
 import { VideoRepository } from "../../../database/implementations/video-repository.impl.js";
 import { CollectionRepository } from "../../../database/implementations/collection-repository.impl.js";
 import { CollectionItemRepository } from "../../../database/implementations/collection-item-repository.impl.js";
@@ -28,7 +28,15 @@ function getSyncService(): FavoriteSyncService {
     
     // 创建数据源适配器，只在获取收藏夹视频列表数据的时候生效，视频信息获取不使用间隔
     const videoDataSource = new BiliApiVideoDataSource(getVideoDetail, getVideoTagsDetail, 0);
-    const favoriteDataSource = new BiliApiFavoriteDataSource(getAllFavoriteVideos, getFavoriteFolders, getFavoriteVideos, getCollectedFolders, getCollectedVideos, requestInterval);
+    const favoriteDataSource = new BiliApiFavoriteDataSource(
+          getAllFavoriteVideos, 
+          getFavoriteFolders, 
+          getFavoriteVideos, 
+          getCollectedFolders, 
+          getCollectedVideos,
+          getSeasonVideos,
+          requestInterval
+        );
 
     // 创建依赖对象
     const dependencies = {

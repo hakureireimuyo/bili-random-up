@@ -29,6 +29,25 @@ export function toDBVideo(videoDetail: any, tagIds: string[]): DBVideo {
 }
 
 /**
+ * 创建失效视频的数据库模型
+ * 用于标记无法获取详情的视频（如被删除、下架等）
+ */
+export function toInvalidVideo(bvid: string, creatorId?: string): DBVideo {
+  return {
+    videoId: bvid,
+    platform: BILIBILI,
+    creatorId: creatorId || "unknown",
+    title: "失效视频",
+    description: "该视频已失效或无法获取详情",
+    duration: 0,
+    publishTime: Date.now(),
+    tags: [],
+    createdAt: Date.now(),
+    isInvalid: true
+  };
+}
+
+/**
  * 将API UP主信息转换为数据库UP主模型
  */
 export function toDBCreator(mid: number, name: string): DBCreator {
