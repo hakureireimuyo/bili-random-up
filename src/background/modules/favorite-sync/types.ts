@@ -3,9 +3,56 @@
  * 收藏同步模块类型定义
  */
 
+import type { Collection, CollectionItem } from "../../../database/types/collection.js";
+import type { Platform, PaginationParams, PaginationResult } from "../../../database/types/base.js";
 import type { Video as DBVideo } from "../../../database/types/video.js";
 import type { Creator as DBCreator } from "../../../database/types/creator.js";
 import type { Tag as DBTag } from "../../../database/types/semantic.js";
+import type { ICollectionRepository } from "../../../database/interfaces/collection/collection-repository.interface.js";
+import type { ICollectionItemRepository } from "../../../database/interfaces/collection/collection-item-repository.interface.js";
+import type { IVideoRepository } from "../../../database/interfaces/video/video-repository.interface.js";
+import type { ICreatorRepository } from "../../../database/interfaces/creator/creator-repository.interface.js";
+import type { ITagRepository } from "../../../database/interfaces/semantic/tag-repository.interface.js";
+
+export interface FavoriteVideoEntry {
+  bvid: string;
+  intro?: string;
+}
+
+export interface FavoriteTag {
+  tag_id: number;
+  tag_name: string;
+}
+
+export interface FavoriteFolder {
+  id: number;
+  title: string;
+  media_count: number;
+}
+
+export interface CollectedFavoriteFolder extends FavoriteFolder {
+  upper: {
+    mid: number;
+    name: string;
+  };
+}
+
+export type FavoriteFolderLike = FavoriteFolder | CollectedFavoriteFolder;
+
+export interface VideoOwner {
+  mid: number;
+  name: string;
+}
+
+export interface FavoriteVideoApiDetail {
+  bvid: string;
+  owner: VideoOwner;
+  title: string;
+  desc?: string;
+  duration: number;
+  pubdate: number;
+  pic: string;
+}
 
 /**
  * 收藏同步配置
@@ -64,9 +111,9 @@ export type FavoriteVideoDetail = DBVideo & {
  */
 export interface IVideoDataSource {
   /** 获取视频详情 */
-  getVideoDetail(bvid: string): Promise<any>;
+  getVideoDetail(bvid: string): Promise<FavoriteVideoApiDetail | null>;
   /** 获取视频标签 */
-  getVideoTags(bvid: string): Promise<Array<{ tag_id: number; tag_name: string }>>;
+  getVideoTags(bvid: string): Promise<FavoriteTag[]>;
 }
 
 /**
@@ -74,17 +121,31 @@ export interface IVideoDataSource {
  */
 export interface IFavoriteDataSource {
   /** 获取所有收藏视频 */
-  getAllFavoriteVideos(up_mid: number, shouldStop?: () => Promise<boolean>): Promise<Array<{ bvid: string; intro?: string }>>;
+  getAllFavoriteVideos(up_mid: number, shouldStop?: () => Promise<boolean>): Promise<FavoriteVideoEntry[]>;
   /** 获取收藏夹列表 */
-  getFavoriteFolders(up_mid: number): Promise<Array<{ id: number; title: string; media_count: number }>>;
+  getFavoriteFolders(up_mid: number): Promise<FavoriteFolder[]>;
   /** 获取收藏夹视频 */
-  getFavoriteVideos(media_id: number, pn: number, ps: number): Promise<Array<{ bvid: string; intro?: string }>>;
+  getFavoriteVideos(media_id: number, pn: number, ps: number): Promise<FavoriteVideoEntry[]>;
   /** 获取用户订阅的合集列表 */
-  getCollectedFolders(up_mid: number): Promise<Array<{ id: number; title: string; media_count: number; upper: { mid: number; name: string } }>>;
+  getCollectedFolders(up_mid: number): Promise<CollectedFavoriteFolder[]>;
   /** 获取订阅收藏夹视频 */
-  getCollectedVideos(media_id: number, pn: number, ps: number): Promise<Array<{ bvid: string; intro?: string }>>;
+  getCollectedVideos(media_id: number, pn: number, ps: number): Promise<FavoriteVideoEntry[]>;
   /** 获取订阅合集视频 */
-  getSeasonVideos(season_id: number, pn: number, ps: number): Promise<Array<{ bvid: string; intro?: string }>>;
+  getSeasonVideos(season_id: number, pn: number, ps: number): Promise<FavoriteVideoEntry[]>;
+}
+
+export interface ICollectionRepositoryLike extends Pick<ICollectionRepository, "getCollection" | "createCollectionWithId"> {}
+
+export interface ICollectionItemRepositoryLike extends Pick<ICollectionItemRepository, "getCollectionVideos" | "countCollectionItems" | "isVideoInCollection" | "addVideoToCollection"> {
+  getCollectionVideos(collectionId: string, pagination: PaginationParams): Promise<PaginationResult<CollectionItem>>;
+}
+
+export interface IVideoRepositoryLike extends Pick<IVideoRepository, "getVideos" | "upsertVideo"> {}
+
+export interface ICreatorRepositoryLike extends Pick<ICreatorRepository, "getCreator" | "upsertCreator"> {}
+
+export interface ITagRepositoryLike extends Pick<ITagRepository, "getTag" | "createTag"> {
+  createTag(tag: Omit<DBTag, "tagId">): Promise<string>;
 }
 
 /**
@@ -96,13 +157,13 @@ export interface IFavoriteSyncDependencies {
   /** 收藏数据源 */
   favoriteDataSource: IFavoriteDataSource;
   /** 视频仓库 */
-  videoRepository: any;
+  videoRepository: IVideoRepositoryLike;
   /** 收藏夹仓库 */
-  collectionRepository: any;
+  collectionRepository: ICollectionRepositoryLike;
   /** 收藏项仓库 */
-  collectionItemRepository: any;
+  collectionItemRepository: ICollectionItemRepositoryLike;
   /** UP主仓库 */
-  creatorRepository: any;
+  creatorRepository: ICreatorRepositoryLike;
   /** 标签仓库 */
-  tagRepository: any;
+  tagRepository: ITagRepositoryLike;
 }

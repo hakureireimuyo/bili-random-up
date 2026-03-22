@@ -207,6 +207,24 @@ export interface IVideoRepository {
   updateVideoTags(videoId: string, platform: Platform, tags: string[]): Promise<void>;
 
   /**
+   * 更新视频封面缓存
+   *
+   * @param videoId - 视频ID
+   * @param platform - 平台类型
+   * @param picture - 封面图片数据（data URL）
+   * @returns Promise<void>
+   *
+   * 职责：
+   * - 更新视频的本地封面缓存
+   * - 仅修改 picture 字段
+   *
+   * 能力边界：
+   * - 不下载远端图片
+   * - 不修改其他视频字段
+   */
+  updateVideoPicture(videoId: string, platform: Platform, picture: string): Promise<void>;
+
+  /**
    * 获取所有视频
    *
    * @returns Promise<Video[]> - 所有视频

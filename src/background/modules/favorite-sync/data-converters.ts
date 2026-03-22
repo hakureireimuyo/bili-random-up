@@ -7,13 +7,15 @@
 import { Platform, TagSource } from "../../../database/types/base.js";
 import type { Video as DBVideo } from "../../../database/types/video.js";
 import type { Creator as DBCreator } from "../../../database/types/creator.js";
+import type { Tag as DBTag } from "../../../database/types/semantic.js";
+import type { FavoriteTag, FavoriteVideoApiDetail } from "./types.js";
 
 const BILIBILI = Platform.BILIBILI;
 
 /**
  * 将API视频详情转换为数据库视频模型
  */
-export function toDBVideo(videoDetail: any, tagIds: string[]): DBVideo {
+export function toDBVideo(videoDetail: FavoriteVideoApiDetail, tagIds: string[]): DBVideo {
   return {
     videoId: videoDetail.bvid,
     platform: BILIBILI,
@@ -68,7 +70,7 @@ export function toDBCreator(mid: number, name: string): DBCreator {
 /**
  * 将API标签转换为数据库标签模型
  */
-export function toDBTag(tag: { tag_id: number; tag_name: string }) {
+export function toDBTag(tag: FavoriteTag): DBTag {
   return {
     tagId: tag.tag_id.toString(),
     name: tag.tag_name,

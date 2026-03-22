@@ -200,6 +200,25 @@ export class VideoRepository implements IVideoRepository {
   }
 
   /**
+   * 更新视频封面缓存
+   */
+  async updateVideoPicture(videoId: string, platform: Platform, picture: string): Promise<void> {
+    const video = await this.getVideo(videoId, platform);
+    if (!video) {
+      throw new Error(`Video not found: ${videoId}`);
+    }
+
+    if (video.picture === picture) {
+      return;
+    }
+
+    await this.upsertVideo({
+      ...video,
+      picture
+    });
+  }
+
+  /**
    * 获取所有视频
    */
   async getAllVideos(): Promise<Video[]> {
