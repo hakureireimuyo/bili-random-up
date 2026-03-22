@@ -23,14 +23,51 @@ export async function loadCollections(state: FavoritesState): Promise<void> {
   }
 }
 
-export function renderCollectionTabs(state: FavoritesState, onSwitch: (collectionId: string) => void): void {
+export function renderCollectionTabs(state: FavoritesState, onSwitch: (collectionId: string) => void, onTypeSwitch: (type: 'user' | 'subscription') => void): void {
   const collectionTabs = document.getElementById('collectionTabs');
   if (!collectionTabs) return;
 
   collectionTabs.innerHTML = '';
 
-  if (state.collections.length === 0) {
-    showEmptyCollections();
+  // 创建类型切换按钮容器
+  const typeSwitchContainer = document.createElement('div');
+  typeSwitchContainer.className = 'collection-type-switch';
+
+  // 用户收藏夹按钮
+  const userTypeBtn = document.createElement('button');
+  userTypeBtn.className = `type-switch-btn ${state.currentCollectionType === 'user' ? 'active' : ''}`;
+  userTypeBtn.textContent = '我的收藏夹';
+  userTypeBtn.addEventListener('click', () => {
+    if (state.currentCollectionType !== 'user') {
+      onTypeSwitch('user');
+    }
+  });
+  typeSwitchContainer.appendChild(userTypeBtn);
+
+  // 订阅收藏夹按钮
+  const subscriptionTypeBtn = document.createElement('button');
+  subscriptionTypeBtn.className = `type-switch-btn ${state.currentCollectionType === 'subscription' ? 'active' : ''}`;
+  subscriptionTypeBtn.textContent = '订阅的合集';
+  subscriptionTypeBtn.addEventListener('click', () => {
+    if (state.currentCollectionType !== 'subscription') {
+      onTypeSwitch('subscription');
+    }
+  });
+  typeSwitchContainer.appendChild(subscriptionTypeBtn);
+
+  collectionTabs.appendChild(typeSwitchContainer);
+
+  // 根据当前类型过滤收藏夹
+  const filteredCollections = state.collections.filter(
+    collection => collection.type === state.currentCollectionType || 
+                  (collection.type === undefined && state.currentCollectionType === 'user')
+  );
+
+  if (filteredCollections.length === 0) {
+    const emptyMessage = document.createElement('p');
+    emptyMessage.className = 'empty-collections';
+    emptyMessage.textContent = '暂无收藏夹';
+    collectionTabs.appendChild(emptyMessage);
     return;
   }
 
@@ -44,7 +81,7 @@ export function renderCollectionTabs(state: FavoritesState, onSwitch: (collectio
   });
   collectionTabs.appendChild(allTab);
 
-  state.collections.forEach(collection => {
+  filteredCollections.forEach(collection => {
     const tab = document.createElement('div');
     tab.className = `collection-tab ${collection.collectionId === state.currentCollectionId ? 'active' : ''}`;
     tab.dataset.collectionId = collection.collectionId;
@@ -83,6 +120,33 @@ export async function switchCollection(state: FavoritesState, collectionId: stri
 
   renderCollectionTabs(state, async (id) => {
     await switchCollection(state, id, refresh);
+  }, async (type) => {
+    await switchCollectionType(state, type, refresh);
+  });
+  await refresh();
+}
+
+export async function switchCollectionType(state: FavoritesState, type: 'user' | 'subscription', refresh: RefreshFn): Promise<void> {
+  if (state.currentCollectionType === type) return;
+
+  state.currentCollectionType = type;
+  state.currentCollectionId = 'all';
+  state.currentPage = 0;
+
+  // 清除标签过滤
+  state.filters.includeTags = [];
+  state.filters.excludeTags = [];
+
+  // 加载新类型的全部收藏夹数据
+  await loadCollectionData(state);
+
+  // 更新标签列表
+  await updateFilterOptions(state);
+
+  renderCollectionTabs(state, async (id) => {
+    await switchCollection(state, id, refresh);
+  }, async (newType) => {
+    await switchCollectionType(state, newType, refresh);
   });
   await refresh();
 }
@@ -102,7 +166,7 @@ export async function loadCollectionData(state: FavoritesState): Promise<void> {
     if (state.currentCollectionId === 'all') {
       const allVideosResponse = await chrome.runtime.sendMessage({
         type: 'get_all_collection_videos',
-        payload: {}
+        payload: { collectionType: state.currentCollectionType }
       }) as unknown as { success: boolean; videos?: import("../../database/implementations/collection-data-access.impl.js").AggregatedCollectionVideo[]; error?: string };
 
       console.log('[Favorites] All videos response:', allVideosResponse);

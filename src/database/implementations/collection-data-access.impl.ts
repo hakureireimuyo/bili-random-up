@@ -144,13 +144,23 @@ export async function getCollectionVideos(
  * 获取所有收藏夹的聚合视频列表
  */
 export async function getAllCollectionVideos(
-  platform: Platform = BILIBILI
+  platform: Platform = BILIBILI,
+  collectionType?: 'user' | 'subscription'
 ): Promise<AggregatedCollectionVideo[]> {
-  console.log('[CollectionDataAccess] Getting all collection videos');
+  console.log('[CollectionDataAccess] Getting all collection videos', collectionType ? `for type: ${collectionType}` : '');
 
   // 获取所有收藏夹
-  const collections = await collectionRepository.getAllCollections(platform);
+  let collections = await collectionRepository.getAllCollections(platform);
   console.log('[CollectionDataAccess] Collections result:', collections);
+
+  // 如果指定了类型，则过滤收藏夹
+  if (collectionType) {
+    collections = collections.filter(
+      collection => collection.type === collectionType || 
+                    (collection.type === undefined && collectionType === 'user')
+    );
+    console.log(`[CollectionDataAccess] Filtered collections for type ${collectionType}:`, collections);
+  }
 
   if (collections.length === 0) {
     console.warn('[CollectionDataAccess] No collections found');

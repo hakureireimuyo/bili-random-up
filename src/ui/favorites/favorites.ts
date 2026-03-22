@@ -9,19 +9,18 @@ import {
   renderCollectionTabs,
   showEmptyCollections,
   switchCollection,
+  switchCollectionType,
   loadCollectionData
 } from "./collection-manager.js";
 import { applyFilters, updateFilterOptions, clearFilters, renderFilterTags, setupDragAndDrop } from "./filter-manager.js";
 import { createInitialState, setLoading, showError, updatePagination } from "./helpers.js";
-import { bindPageActions } from "./page-actions.js";
+
 import { renderVideos, changePage } from "./video-list.js";
 import type { FavoritesState } from "./types.js";
 import "./debug.js";
 
 // DOM元素
 const elements = {
-  syncBtn: document.getElementById('syncBtn'),
-  stopSyncBtn: document.getElementById('stopSyncBtn'),
   collectionTabs: document.getElementById('collectionTabs'),
   searchInput: document.getElementById('searchInput'),
   searchBtn: document.getElementById('searchBtn'),
@@ -62,7 +61,7 @@ async function rerenderPage(): Promise<void> {
   const showErrorState = (message: string) => showError(message, elements);
 
   await renderVideos(state, elements);
-  renderCollectionTabs(state, (id) => switchCollection(state, id, rerenderPage));
+  renderCollectionTabs(state, (id) => switchCollection(state, id, rerenderPage), (type) => switchCollectionType(state, type, rerenderPage));
   updatePagination(state, elements);
   renderFilterTags(state, rerenderPage);
 }
@@ -87,8 +86,14 @@ async function loadState(): Promise<void> {
       return;
     }
 
-    if (!state.currentCollectionId || !state.collections.find(c => c.collectionId === state.currentCollectionId)) {
-      state.currentCollectionId = state.collections[0].collectionId;
+    // 根据当前类型过滤收藏夹
+    const filteredCollections = state.collections.filter(
+      collection => collection.type === state.currentCollectionType || 
+                    (collection.type === undefined && state.currentCollectionType === 'user')
+    );
+    
+    if (!state.currentCollectionId || !filteredCollections.find(c => c.collectionId === state.currentCollectionId)) {
+      state.currentCollectionId = filteredCollections.length > 0 ? filteredCollections[0].collectionId : 'all';
       console.log('[Favorites] Set current collection ID:', state.currentCollectionId);
     }
 
@@ -172,16 +177,17 @@ export async function initFavorites(): Promise<void> {
 
   const showErrorState = (message: string) => showError(message, elements);
 
-  bindPageActions(state, rerenderPage, setLoadingState, showErrorState);
   bindInputs();
 
   console.log('[Favorites] Loading state...');
   await loadState();
 
   // 默认选择"全部"
-  state.currentCollectionId = 'all';
-  await loadCollectionData(state);
-  await updateFilterOptions(state);
+  if (state.currentCollectionId !== 'all') {
+    state.currentCollectionId = 'all';
+    await loadCollectionData(state);
+    await updateFilterOptions(state);
+  }
 
   setupDragAndDrop(state, rerenderPage);
 

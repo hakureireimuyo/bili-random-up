@@ -17,26 +17,6 @@ body {
   padding: 20px;
 }
 
-.header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 24px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid #e0e0e0;
-}
-
-.title {
-  font-size: 30px;
-  font-weight: 600;
-  color: #1f2430;
-}
-
-.actions {
-  display: flex;
-  gap: 12px;
-}
-
 .search-bar {
   display: flex;
   gap: 12px;
@@ -262,6 +242,8 @@ body {
   background: #ffffff;
   border-radius: 15px;
   box-shadow: 0 3px 9px rgba(20, 30, 50, 0.08);
+  max-height: 400px;
+  overflow-y: auto;
 }
 
 .collection-tab {
@@ -272,8 +254,10 @@ body {
   font-weight: 500;
   color: #5b6475;
   transition: all 0.2s;
-  white-space: nowrap;
+  white-space: normal;
+  word-wrap: break-word;
   user-select: none;
+  max-width: 100%;
 }
 
 .collection-tab:hover {
@@ -283,6 +267,38 @@ body {
 .collection-tab.active {
   background-color: #2b6cff;
   color: white;
+}
+
+/* 收藏夹类型切换按钮 */
+.collection-type-switch {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 12px;
+  width: 100%;
+}
+
+.type-switch-btn {
+  padding: 8px 16px;
+  border: 1.5px solid #cbd3e1;
+  border-radius: 9px;
+  background: white;
+  color: #5b6475;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  flex: 1;
+}
+
+.type-switch-btn:hover {
+  background-color: #f7f7f9;
+  border-color: #2b6cff;
+}
+
+.type-switch-btn.active {
+  background-color: #2b6cff;
+  color: white;
+  border-color: #2b6cff;
 }
 
 .loading-tabs {

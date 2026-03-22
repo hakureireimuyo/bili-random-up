@@ -2,17 +2,27 @@ import type { FavoritesState, AggregatedVideo } from "./types.js";
 import { formatDuration, colorFromTag } from "./helpers.js";
 import { DBUtils, STORE_NAMES } from "../../database/indexeddb/index.js";
 import type { Tag } from "../../database/types/semantic.js";
-import { VideoRepository } from "../../database/implementations/video-repository.impl.js";
-import { Platform } from "../../database/types/base.js";
+import { fetchAndCachePicture, bindCoverImage } from "./cover-cache.js";
+
 
 type RefreshFn = () => void;
-const videoRepository = new VideoRepository();
-const BILIBILI = Platform.BILIBILI;
-
 // 标签缓存
+const MAX_TAG_CACHE_SIZE = 500;
 const tagCache = new Map<string, string>();
-const pictureCache = new Map<string, string>();
-const pictureLoadTasks = new Map<string, Promise<string | null>>();
+
+/**
+ * 添加标签到缓存，如果缓存已满则移除最旧的条目
+ */
+function addToTagCache(tagId: string, tagName: string): void {
+  // 如果缓存已满，移除最旧的条目
+  if (tagCache.size >= MAX_TAG_CACHE_SIZE) {
+    const firstKey = tagCache.keys().next().value;
+    if (firstKey) {
+      tagCache.delete(firstKey);
+    }
+  }
+  tagCache.set(tagId, tagName);
+}
 
 /**
  * 获取标签名称
@@ -27,106 +37,12 @@ async function getTagName(tagId: string): Promise<string> {
   try {
     const tag = await DBUtils.get<Tag>(STORE_NAMES.TAGS, tagId);
     const tagName = tag?.name || tagId;
-    tagCache.set(tagId, tagName);
+    addToTagCache(tagId, tagName);
     return tagName;
   } catch (error) {
     console.error('[VideoList] Error getting tag name:', error);
     return tagId;
   }
-}
-
-async function blobToDataUrl(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      if (typeof reader.result === "string") {
-        resolve(reader.result);
-        return;
-      }
-
-      reject(new Error("Failed to convert blob to data URL"));
-    };
-    reader.onerror = () => reject(reader.error ?? new Error("Failed to read blob"));
-    reader.readAsDataURL(blob);
-  });
-}
-
-async function savePictureToDatabase(videoId: string, picture: string): Promise<void> {
-  await videoRepository.updateVideoPicture(videoId, BILIBILI, picture);
-}
-
-async function fetchAndCachePicture(video: AggregatedVideo): Promise<string | null> {
-  if (video.picture) {
-    pictureCache.set(video.videoId, video.picture);
-    return video.picture;
-  }
-
-  if (!video.coverUrl) {
-    return null;
-  }
-  const coverUrl = video.coverUrl;
-
-  const cachedPicture = pictureCache.get(video.videoId);
-  if (cachedPicture) {
-    video.picture = cachedPicture;
-    return cachedPicture;
-  }
-
-  const existingTask = pictureLoadTasks.get(video.videoId);
-  if (existingTask) {
-    return existingTask;
-  }
-
-  const task = (async () => {
-    try {
-      const response = await fetch(coverUrl);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch cover: ${response.status}`);
-      }
-
-      const picture = await blobToDataUrl(await response.blob());
-      pictureCache.set(video.videoId, picture);
-      video.picture = picture;
-      await savePictureToDatabase(video.videoId, picture);
-      return picture;
-    } catch (error) {
-      console.warn("[VideoList] Error caching cover image:", video.videoId, error);
-      return null;
-    } finally {
-      pictureLoadTasks.delete(video.videoId);
-    }
-  })();
-
-  pictureLoadTasks.set(video.videoId, task);
-  return task;
-}
-
-function bindCoverImage(img: HTMLImageElement, video: AggregatedVideo): void {
-  const cachedPicture = video.picture || pictureCache.get(video.videoId);
-  if (cachedPicture) {
-    video.picture = cachedPicture;
-    img.src = cachedPicture;
-    return;
-  }
-
-  if (!video.coverUrl) {
-    img.src = "";
-    return;
-  }
-
-  img.loading = "lazy";
-  img.decoding = "async";
-  img.src = video.coverUrl;
-
-  void fetchAndCachePicture(video).then((picture) => {
-    if (!picture) {
-      return;
-    }
-
-    if (img.src !== picture) {
-      img.src = picture;
-    }
-  });
 }
 
 export async function createVideoCard(video: AggregatedVideo): Promise<HTMLElement> {

@@ -46,6 +46,7 @@ export function createInitialState(): FavoritesState {
   return {
     collections: [],
     currentCollectionId: null,
+    currentCollectionType: 'user',
     aggregatedVideos: [],
     filteredVideos: [],
     currentPage: 0,
@@ -64,11 +65,6 @@ export function createInitialState(): FavoritesState {
 
 export function setLoading(loading: boolean, elements: Record<string, HTMLElement | null>): void {
   if (elements.loading) elements.loading.style.display = loading ? 'block' : 'none';
-  if (elements.syncBtn) {
-    (elements.syncBtn as HTMLButtonElement).disabled = loading;
-    elements.syncBtn.textContent = loading ? '同步中...' : '同步收藏';
-  }
-  if (elements.stopSyncBtn) (elements.stopSyncBtn as HTMLButtonElement).disabled = !loading;
 }
 
 export function showError(message: string, elements: Record<string, HTMLElement | null>): void {

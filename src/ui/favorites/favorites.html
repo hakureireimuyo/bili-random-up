@@ -8,23 +8,15 @@
 </head>
 <body>
   <div class="container">
-    <header class="header">
-      <h1 class="title">收藏视频</h1>
-      <div class="actions">
-        <button id="syncBtn" class="btn btn-primary">同步收藏</button>
-        <button id="stopSyncBtn" class="btn btn-danger" style="display: none;">停止同步</button>
-      </div>
-    </header>
-
-    <div class="search-bar">
-      <input type="text" id="searchInput" class="search-input" placeholder="搜索视频标题或使用@UP主名...">
-      <button id="searchBtn" class="btn btn-secondary">搜索</button>
-      <button id="clearFilterBtn" class="btn btn-secondary">清除筛选</button>
-    </div>
-
     <div class="content-area">
       <!-- 左侧视频列表区域 -->
       <div class="video-list-container">
+        <div class="search-bar">
+          <input type="text" id="searchInput" class="search-input" placeholder="搜索视频标题或使用@UP主名...">
+          <button id="searchBtn" class="btn btn-secondary">搜索</button>
+          <button id="clearFilterBtn" class="btn btn-secondary">清除筛选</button>
+        </div>
+        
         <div class="video-list" id="videoList">
           <div class="loading" id="loading">
             <div class="spinner"></div>

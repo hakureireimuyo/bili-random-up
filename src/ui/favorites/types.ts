@@ -11,6 +11,7 @@ export interface ChromeMessageResponse<T = any> {
 export interface FavoritesState {
   collections: Collection[];
   currentCollectionId: string | null;
+  currentCollectionType: 'user' | 'subscription';
   aggregatedVideos: AggregatedCollectionVideo[];
   filteredVideos: AggregatedCollectionVideo[];
   currentPage: number;

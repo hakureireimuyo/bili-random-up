@@ -1,10 +1,21 @@
 import { getValue, loadUPList, type ClassifyStatus, type InterestProfile } from "../../database/implementations/index.js";
 import { getAllCollectionVideos } from "../../database/implementations/collection-data-access.impl.js";
 import { armProgressTimeout, bindProgressListener, hideProgress, showProgress, updateProgress } from "./popup-progress.js";
+import { armSyncProgressTimeout, bindSyncProgressListener, hideSyncProgress, showSyncProgress, updateSyncProgress } from "./popup-sync-progress.js";
 import { hasChromeRuntime, navigateCurrentTab, openExtensionPage, sendMessage } from "./popup-runtime.js";
 import type { InterestRow } from "./popup-types.js";
 
 type ClassifyProgress = {
+  active?: boolean;
+  stopping?: boolean;
+  current?: number;
+  total?: number;
+  title?: string;
+  detail?: string;
+  text?: string;
+};
+
+type SyncProgress = {
   active?: boolean;
   stopping?: boolean;
   current?: number;
@@ -147,6 +158,58 @@ async function handleAutoClassify(): Promise<void> {
   }
 }
 
+async function handleSyncFavorites(): Promise<void> {
+  if (!hasChromeRuntime()) {
+    return;
+  }
+
+  try {
+    const settings = (await getValue<{ userId?: number }>("settings")) ?? {};
+    if (!settings.userId) {
+      alert("请先在设置中配置用户UID");
+      return;
+    }
+
+    const progress = await sendMessage<SyncProgress>("get_sync_progress");
+    if (progress?.active) {
+      updateSyncProgress({
+        current: progress.current ?? 0,
+        total: progress.total ?? 0,
+        title: "正在停止同步",
+        detail: "等待当前任务收尾",
+        stopping: true
+      });
+      await sendMessage("set_should_stop_sync", { shouldStop: true });
+      armSyncProgressTimeout();
+      return;
+    }
+
+    showSyncProgress();
+    updateSyncProgress({
+      current: 0,
+      total: 0,
+      title: "同步收藏",
+      detail: "准备中...",
+      text: "准备中..."
+    });
+    bindSyncProgressListener(() => {
+      hideSyncProgress();
+      void loadStatus();
+    });
+    const response = await sendMessage<{ success?: boolean; count?: number }>("sync_favorite_videos", { uid: settings.userId });
+    if (response?.success && response.count !== undefined) {
+      alert(`同步完成！共同步 ${response.count} 个收藏视频`);
+    } else if (response?.success === false) {
+      hideSyncProgress();
+    }
+    armSyncProgressTimeout();
+  } catch (error) {
+    console.error("[Popup] Sync favorites error", error);
+    hideSyncProgress();
+    alert("同步失败，请稍后重试");
+  }
+}
+
 async function jumpToRandomUP(): Promise<void> {
   const upCache = await loadUPList();
   if (!upCache?.upList?.length) {
@@ -175,6 +238,7 @@ async function jumpToRandomFavorite(): Promise<void> {
 function bindButtons(): void {
   document.getElementById("btn-update-up")?.addEventListener("click", () => void handleUpdateUpList());
   document.getElementById("btn-auto-classify")?.addEventListener("click", () => void handleAutoClassify());
+  document.getElementById("btn-sync-favorites")?.addEventListener("click", () => void handleSyncFavorites());
   document.getElementById("btn-random-up")?.addEventListener("click", () => void jumpToRandomUP());
   document.getElementById("btn-random-favorite")?.addEventListener("click", () => void jumpToRandomFavorite());
   document.getElementById("btn-stats")?.addEventListener("click", () => openExtensionPage("ui/stats/stats.html"));

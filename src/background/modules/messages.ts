@@ -3,6 +3,28 @@ import { randomUP, randomVideo, recommendUP, recommendVideo, updateInterestFromW
 
 // 全局变量，用于存储是否应该停止同步
 let shouldStopSync = false;
+
+// 同步进度状态
+let syncProgressState = {
+  active: false,
+  current: 0,
+  total: 0,
+  title: "",
+  detail: "",
+  stopping: false
+};
+
+// 发送同步进度消息
+function sendSyncProgress(): void {
+  if (chrome.runtime?.sendMessage) {
+    chrome.runtime.sendMessage({
+      type: "sync_progress",
+      payload: { ...syncProgressState }
+    }).catch(() => {
+      // 忽略错误，可能是popup已关闭
+    });
+  }
+}
 import { 
   getValue, 
   setValue, 
@@ -28,6 +50,9 @@ import { getCollectionVideos, getAllCollectionVideos } from "../../database/impl
 import { VideoRepository, CreatorRepository, TagRepository, CollectionItemRepository } from "../../database/implementations/index.js";
 
 declare const chrome: {
+  runtime?: {
+    sendMessage?: (message: unknown) => Promise<unknown>;
+  };
   tabs?: {
     query?: (queryInfo: { active?: boolean; currentWindow?: boolean }) => Promise<{ id?: number }[]>;
     update?: (tabId: number | undefined, updateProperties: { url: string }) => void;
@@ -518,11 +543,17 @@ export async function handleMessage(
     return { success: true, shouldStop: shouldStopSync };
   }
 
+  if (message.type === "get_sync_progress") {
+    return { ...syncProgressState };
+  }
+
   if (message.type === "set_should_stop_sync") {
     const payload = message.payload as { shouldStop?: boolean };
     if (payload?.shouldStop !== undefined) {
       shouldStopSync = payload.shouldStop;
+      syncProgressState.stopping = payload.shouldStop;
       console.log(`[Background] shouldStopSync set to: ${shouldStopSync}`);
+      sendSyncProgress();
       return { success: true };
     }
     return { success: false, error: "Missing shouldStop" };
@@ -537,7 +568,16 @@ export async function handleMessage(
     try {
       // 重置 shouldStop 状态
       shouldStopSync = false;
+      syncProgressState = {
+        active: true,
+        current: 0,
+        total: 0,
+        title: "同步收藏",
+        detail: "准备中...",
+        stopping: false
+      };
       console.log(`[Background] Starting sync, shouldStopSync reset to: ${shouldStopSync}`);
+      sendSyncProgress();
 
       // 创建 shouldStop 函数
       const shouldStop = async () => {
@@ -546,9 +586,24 @@ export async function handleMessage(
       };
 
       const count = await syncFavoriteVideos(payload.uid, shouldStop);
+      
+      // 同步完成
+      syncProgressState.active = false;
+      sendSyncProgress();
+      if (chrome.runtime?.sendMessage) {
+        chrome.runtime.sendMessage({
+          type: "sync_complete",
+          payload: { count }
+        }).catch(() => {
+          // 忽略错误，可能是popup已关闭
+        });
+      }
+      
       return { success: true, count };
     } catch (error) {
       console.error("[Background] Error syncing favorite videos:", error);
+      syncProgressState.active = false;
+      sendSyncProgress();
       return { success: false, error: String(error) };
     }
   }
@@ -579,9 +634,10 @@ export async function handleMessage(
 
   if (message.type === "get_all_collection_videos") {
     console.log("[Background] Getting all collection videos");
+    const payload = message.payload as { collectionType?: 'user' | 'subscription' };
 
     try {
-      const videos = await getAllCollectionVideos(Platform.BILIBILI);
+      const videos = await getAllCollectionVideos(Platform.BILIBILI, payload.collectionType);
       console.log("[Background] All collection videos result:", videos);
       return { success: true, videos };
     } catch (error) {
