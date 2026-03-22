@@ -41,10 +41,15 @@ export function createDragGhost(e: DragEvent, tag: string): void {
     document.addEventListener("dragover", globalDragOverHandler);
   }
 
+  let rafId: number | null = null;
   const moveGhost = (moveEvent: MouseEvent) => {
-    if (dragGhost) {
-      dragGhost.style.left = `${moveEvent.clientX}px`;
-      dragGhost.style.top = `${moveEvent.clientY}px`;
+    if (dragGhost && rafId === null) {
+      rafId = requestAnimationFrame(() => {
+        if (dragGhost) {
+          dragGhost.style.transform = `translate(${moveEvent.clientX}px, ${moveEvent.clientY}px)`;
+        }
+        rafId = null;
+      });
     }
   };
 
@@ -53,6 +58,10 @@ export function createDragGhost(e: DragEvent, tag: string): void {
     "mouseup",
     () => {
       document.removeEventListener("mousemove", moveGhost);
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
       setTimeout(() => removeDragGhost(), 100);
     },
     { once: true }

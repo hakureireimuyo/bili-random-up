@@ -32,11 +32,20 @@ export function addTagToCategory(state: StatsState, categoryId: string, tag: str
     return;
   }
   category.tags.push(tag);
+  
+  // 立即更新 UI，不等待数据库操作
+  const tagsContainer = document.querySelector(`[data-category-id="${categoryId}"]`);
+  if (tagsContainer) {
+    tagsContainer.appendChild(renderCategoryTagPill(state, tag, categoryId, onChanged));
+  }
+  
+  // 异步保存到数据库
   void (async () => {
     const tagObj = await addTagToLibrary(tag);
     await addTagIdToCategory(categoryId, tagObj.id);
   })();
-  onChanged();
+  
+  // 不再调用 onChanged()，避免完整页面重新渲染
 }
 
 export function removeTagFromCategory(
@@ -50,13 +59,28 @@ export function removeTagFromCategory(
     return;
   }
   category.tags = category.tags.filter((item) => item !== tag);
+  
+  // 立即更新 UI，移除对应的标签元素
+  const tagsContainer = document.querySelector(`[data-category-id="${categoryId}"]`);
+  if (tagsContainer) {
+    const tagPills = Array.from(tagsContainer.querySelectorAll('.tag-pill'));
+    for (const pill of tagPills) {
+      if (pill.textContent === tag) {
+        pill.remove();
+        break;
+      }
+    }
+  }
+  
+  // 异步从数据库中移除
   void (async () => {
     const tagId = await getTagIdByName(tag);
     if (tagId) {
       await removeTagIdFromCategory(categoryId, tagId);
     }
   })();
-  onChanged();
+  
+  // 不再调用 onChanged()，避免完整页面重新渲染
 }
 
 function renderCategoryTagPill(
