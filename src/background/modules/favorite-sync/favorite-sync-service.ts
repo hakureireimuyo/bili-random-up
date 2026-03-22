@@ -262,7 +262,7 @@ private async processFolder(
   let fetchedVideos: Array<{ bvid: string; intro?: string }> = [];
   let hasMore = true;
   let allFetchedCount = 0; // 总共获取的视频数量
-  const maxFetchLimit = Math.min(expectedDiff * 2, 100); // 最大获取限制，避免过多请求
+  const maxFetchLimit = Math.min(expectedDiff * 2, 1000); // 最大获取限制，避免过多请求
   let consecutiveExistingCount = 0; // 连续已存在视频计数
   const maxConsecutiveExisting = 5; // 最大连续已存在视频数（跳转后）
 
