@@ -251,6 +251,23 @@ export class CreatorRepository {
   }
 
   /**
+   * 获取创作者的手动标签ID列表
+   * @param creatorId 创作者ID
+   * @param platform 平台类型
+   * @returns 用户手动添加的标签ID列表
+   */
+  async getUPManualTags(creatorId: string, platform: Platform): Promise<string[]> {
+    const creator = await this.getCreator(creatorId, platform);
+    if (!creator) {
+      return [];
+    }
+    // 返回所有用户手动添加的标签（source 为 'user'）
+    return creator.tagWeights
+      .filter(tw => tw.source === 'user')
+      .map(tw => tw.tagId);
+  }
+
+  /**
    * 删除创作者
    * 基于主键索引的删除操作
    */

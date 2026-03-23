@@ -1,5 +1,10 @@
-import { ALARM_CLASSIFY_UPS, ALARM_UPDATE_UP_LIST, ALARM_DAILY_INTEREST, ALARM_WEEKLY_INTEREST, ALARM_MONTHLY_INTEREST, type AlarmLike, type AlarmManager, type BackgroundOptions } from "./common-types.js";
-import { classifyUpTask } from "./classify-api.js";
+import { ALARM_CLASSIFY_UPS, 
+        ALARM_UPDATE_UP_LIST, 
+        ALARM_DAILY_INTEREST, 
+        ALARM_WEEKLY_INTEREST, 
+        ALARM_MONTHLY_INTEREST, 
+        type AlarmLike, 
+        type AlarmManager } from "./common-types.js";
 import { updateUpListTask } from "./up-list.js";
 import { createInterestManager } from "./interest-manager.js";
 
@@ -13,15 +18,10 @@ export function scheduleAlarms(alarms: AlarmManager): void {
 }
 
 export async function handleAlarm(
-  alarm: AlarmLike,
-  options: BackgroundOptions = {}
+  alarm: AlarmLike
 ): Promise<void> {
   if (alarm.name === ALARM_UPDATE_UP_LIST) {
-    await updateUpListTask(options);
-    return;
-  }
-  if (alarm.name === ALARM_CLASSIFY_UPS) {
-    await classifyUpTask(options);
+    await updateUpListTask();
     return;
   }
   if (alarm.name === ALARM_DAILY_INTEREST) {

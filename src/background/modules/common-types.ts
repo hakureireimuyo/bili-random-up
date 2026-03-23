@@ -56,28 +56,6 @@ export interface NotificationManager {
   }) => void;
 }
 
-export interface BackgroundOptions {
-  getFollowedUPsFn?: typeof getFollowedUPs;
-  saveUPListFn?: typeof saveUPList;
-  getValueFn?: (key: string) => Promise<unknown>;
-  setValueFn?: (key: string, value: unknown) => Promise<void>;
-  classifyUPFn?: typeof classifyUP;
-  getUPVideosFn?: typeof getUPVideos;
-  getVideoTagsFn?: typeof getVideoTags;
-  getUPInfoFn?: typeof getUPInfo;
-  recommendUPFn?: typeof recommendUP;
-  recommendVideoFn?: typeof recommendVideo;
-  updateInterestFromWatchFn?: typeof updateInterestFromWatch;
-  randomUPFn?: typeof randomUP;
-  randomVideoFn?: typeof randomVideo;
-  tabs?: TabsManager;
-  notifications?: NotificationManager;
-  uid?: number;
-  batchSize?: number;
-  classifyWithPageDataFn?: (mid: number, pageData: any, existingTags: string[]) => Promise<string[]>;
-  useAPIMethod?: boolean;
-  maxVideos?: number;
-}
 
 export interface WatchProgressPayload {
   bvid: string;

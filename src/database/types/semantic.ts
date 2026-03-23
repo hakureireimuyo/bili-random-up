@@ -22,14 +22,6 @@ export interface Tag {
    * 标签来源,用户添加的标签可以编辑,系统添加的标签不可以编辑
    */
   source: TagSource;
-  /**
-   * 标签描述
-   */
-  description?: string;
-  /**
-   * 创建时间
-   */
-  createdAt: Timestamp;
 }
 
 /**

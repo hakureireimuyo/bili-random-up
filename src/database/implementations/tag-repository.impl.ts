@@ -4,109 +4,90 @@
  */
 
 // 接口已移除，直接实现功能
-import { Tag, TagStats } from '../types/semantic.js';
+import { Tag } from '../types/semantic.js';
 import { TagSource, PaginationParams, PaginationResult } from '../types/base.js';
 import { DBUtils, STORE_NAMES } from '../indexeddb/index.js';
 
 export class TagRepository {
 
-  /**
-   * 名称规范化
-   */
-  private normalize(name: string): string {
-    return name.trim().toLowerCase();
-  }
-
   // ====== 创建操作 ======
 
   /**
-   * 创建标签（单个）
+   * 创建单个标签（只提供name）
+   * 先通过索引查询判断是否存在，避免异常处理开销
    */
-  async createTag(tag: Omit<Tag, 'tagId'>): Promise<string> {
-    const name = this.normalize(tag.name);
-
-    // 使用索引检查是否已存在
+  async createTag(name: string, source: TagSource): Promise<string> {
+    // 先通过索引查询判断标签是否已存在
     const existing = await DBUtils.getOneByIndex<Tag>(
       STORE_NAMES.TAGS,
       'name',
       name
     );
 
-    if (existing) return existing.tagId;
+    if (existing) {
+      return existing.tagId;
+    }
 
+    // 标签不存在，创建新标签
     const newTag: Tag = {
       tagId: crypto.randomUUID(),
-      ...tag,
-      name
+      name: name,
+      source: source,
     };
 
-    try {
-      await DBUtils.add(STORE_NAMES.TAGS, newTag);
-      return newTag.tagId;
-    } catch (err: any) {
-      if (err.name === 'ConstraintError') {
-        // 约束错误时再次检查，确保返回正确的ID
-        const existing = await DBUtils.getOneByIndex<Tag>(
-          STORE_NAMES.TAGS,
-          'name',
-          name
-        );
-        if (existing) return existing.tagId;
-      }
-      throw err;
-    }
+    await DBUtils.add(STORE_NAMES.TAGS, newTag);
+    return newTag.tagId;
   }
 
   /**
-   * 使用指定ID创建标签
+   * 创建单个标签（提供id和name）
+   * 先通过索引查询判断是否存在，避免异常处理开销
    */
-  async createTagWithId(tag: Tag): Promise<void> {
-    const name = this.normalize(tag.name);
-
-    // 使用索引检查是否已存在
+  async createTagWithId(id: string, name: string, source: TagSource): Promise<string> {
+    // 先通过索引查询判断标签是否已存在
     const existing = await DBUtils.getOneByIndex<Tag>(
       STORE_NAMES.TAGS,
       'name',
       name
     );
 
-    if (existing) return;
+    if (existing) {
+      return existing.tagId;
+    }
 
-    await DBUtils.add(STORE_NAMES.TAGS, {
-      ...tag,
-      name
-    });
+    // 标签不存在，创建新标签
+    const newTag: Tag = {
+      tagId: id,
+      name: name,
+      source: source
+    };
+
+    await DBUtils.add(STORE_NAMES.TAGS, newTag);
+    return newTag.tagId;
   }
 
   /**
    * 批量创建标签（使用cursor优化）
    */
-  async createTags(tags: Omit<Tag, 'tagId'>[]): Promise<string[]> {
-    if (tags.length === 0) return [];
+  async createTags(names: string[], source: TagSource): Promise<string[]> {
+    if (names.length === 0) return [];
     
     // 使用cursor优化的大批量创建
-    return this.createTagsByCursor(tags);
+    return this.createTagsByCursor(names, source);
   }
 
   /**
    * 大批量：cursor 优化版本
+   * 处理输入数据可能重复的情况，同时保证高效的批量创建
    */
-  private async createTagsByCursor(tags: Omit<Tag, 'tagId'>[]): Promise<string[]> {
-    const resultIds: string[] = [];
+  private async createTagsByCursor(names: string[], source: TagSource): Promise<string[]> {
+    if (names.length === 0) return [];
 
-    // 1️⃣ 标准化 + 去重
-    const normalizedMap = new Map<string, Omit<Tag, 'tagId'>>();
+    // 1️⃣ 输入去重（处理输入数据可能重复的情况）
+    const nameSet = new Set<string>(names);
+    const uniqueNames = Array.from(nameSet);
 
-    for (const tag of tags) {
-      const name = this.normalize(tag.name);
-      if (!normalizedMap.has(name)) {
-        normalizedMap.set(name, { ...tag, name });
-      }
-    }
-
-    const targetNames = new Set(normalizedMap.keys());
-
-    // 2️⃣ cursor 扫描 index
+    // 2️⃣ 使用游标扫描索引，查找数据库中已存在的标签
     const existingMap = new Map<string, Tag>();
 
     await DBUtils.cursor<Tag>(
@@ -114,6 +95,82 @@ export class TagRepository {
       (value) => {
         const name = value.name;
 
+        // 只处理目标标签
+        if (nameSet.has(name)) {
+          existingMap.set(name, value);
+
+          // 如果找到所有匹配项，提前终止遍历
+          if (existingMap.size === nameSet.size) {
+            return false;
+          }
+        }
+      },
+      'name'
+    );
+
+    // 3️⃣ 构建结果：已存在标签直接返回ID，新标签准备批量插入
+    const resultIds: string[] = [];
+    const newTags: Tag[] = [];
+
+    for (const name of uniqueNames) {
+      const existing = existingMap.get(name);
+
+      if (existing) {
+        // 数据库中已存在，直接返回ID
+        resultIds.push(existing.tagId);
+      } else {
+        // 新标签，准备批量插入
+        const tagId = crypto.randomUUID();
+        newTags.push({
+          tagId,
+          name,
+          source: source
+        });
+        resultIds.push(tagId);
+      }
+    }
+
+    // 4️⃣ 批量写入新标签（避免异常处理开销）
+    if (newTags.length > 0) {
+      // 分批写入以控制事务大小
+      const BATCH_SIZE = 100;
+      for (let i = 0; i < newTags.length; i += BATCH_SIZE) {
+        const batch = newTags.slice(i, i + BATCH_SIZE);
+        await DBUtils.addBatch(STORE_NAMES.TAGS, batch);
+      }
+    }
+
+    return resultIds;
+  }
+
+  /**
+   * 批量创建（带ID）
+   * 处理输入数据可能重复的情况，同时保证高效的批量创建
+   */
+  async createTagsWithIds(tags: { id: string; name: string }[], source: TagSource): Promise<string[]> {
+    if (tags.length === 0) return [];
+  
+    
+    // 1️⃣ 输入去重（处理输入数据可能重复的情况）
+    // 使用Map去重，保留每个名称对应的第一个ID
+    const uniqueTags = new Map<string, { id: string; name: string }>();
+    for (const tag of tags) {
+      if (!uniqueTags.has(tag.name)) {
+        uniqueTags.set(tag.name, { id: tag.id, name: tag.name });
+      }
+    }
+
+    const targetNames = new Set(uniqueTags.keys());
+
+    // 2️⃣ 使用游标扫描索引，查找数据库中已存在的标签
+    const existingMap = new Map<string, Tag>();
+
+    await DBUtils.cursor<Tag>(
+      STORE_NAMES.TAGS,
+      (value) => {
+        const name = value.name;
+
+        // 只处理目标标签
         if (targetNames.has(name)) {
           existingMap.set(name, value);
 
@@ -126,80 +183,38 @@ export class TagRepository {
       'name'
     );
 
-    // 3️⃣ 构建新增数据
+    // 3️⃣ 构建结果：已存在标签直接返回ID，新标签准备批量插入
+    const resultIds: string[] = [];
     const newTags: Tag[] = [];
 
-    for (const [name, tag] of normalizedMap.entries()) {
+    for (const [name, tag] of uniqueTags.entries()) {
       const existing = existingMap.get(name);
 
       if (existing) {
+        // 数据库中已存在，直接返回ID
         resultIds.push(existing.tagId);
       } else {
-        const tagId = crypto.randomUUID();
-
+        // 新标签，准备批量插入
         newTags.push({
-          tagId,
-          ...tag
+          tagId: tag.id,
+          name: tag.name,
+          source: source
         });
-
-        resultIds.push(tagId);
+        resultIds.push(tag.id);
       }
     }
 
-    // 4️⃣ 批量写入
+    // 4️⃣ 批量写入新标签（避免异常处理开销）
     if (newTags.length > 0) {
-      try {
-        await DBUtils.addBatch(STORE_NAMES.TAGS, newTags);
-      } catch (err: any) {
-        if (err.name === 'ConstraintError') {
-          // 如果批量添加失败，尝试逐个添加
-          for (const tag of newTags) {
-            try {
-              await DBUtils.add(STORE_NAMES.TAGS, tag);
-            } catch {
-              // 忽略错误，继续处理下一个
-            }
-          }
-        } else {
-          throw err;
-        }
+      // 分批写入以控制事务大小
+      const BATCH_SIZE = 100;
+      for (let i = 0; i < newTags.length; i += BATCH_SIZE) {
+        const batch = newTags.slice(i, i + BATCH_SIZE);
+        await DBUtils.addBatch(STORE_NAMES.TAGS, batch);
       }
     }
-
+    
     return resultIds;
-  }
-
-  /**
-   * 批量创建（带ID）
-   */
-  async createTagsWithIds(tags: Tag[]): Promise<string[]> {
-    if (tags.length === 0) return [];
-    
-    const createdIds: string[] = [];
-    
-    // 批量处理以提高性能
-    const batchPromises = tags.map(async (tag) => {
-      const name = this.normalize(tag.name);
-
-      // 使用索引检查是否已存在
-      const existing = await DBUtils.getOneByIndex<Tag>(
-        STORE_NAMES.TAGS,
-        'name',
-        name
-      );
-
-      if (!existing) {
-        await DBUtils.add(STORE_NAMES.TAGS, {
-          ...tag,
-          name
-        });
-        return tag.tagId;
-      }
-      return null;
-    });
-    
-    const results = await Promise.all(batchPromises);
-    return results.filter(id => id !== null) as string[];
   }
 
   // ====== 查询操作 ======
@@ -230,7 +245,7 @@ export class TagRepository {
     return DBUtils.getOneByIndex<Tag>(
       STORE_NAMES.TAGS,
       'name',
-      this.normalize(name)
+      name
     );
   }
 
@@ -333,12 +348,12 @@ export class TagRepository {
     keyword: string,
     pagination?: PaginationParams
   ): Promise<PaginationResult<Tag>> {
-    const normalized = this.normalize(keyword);
+
 
     // 使用范围查询优化搜索性能
     const range = IDBKeyRange.bound(
-      normalized,
-      normalized + '\uffff'
+      keyword,
+      keyword + '\uffff'
     );
 
     // 使用索引获取匹配的标签
@@ -372,50 +387,6 @@ export class TagRepository {
       totalPages: Math.ceil(items.length / pagination.pageSize)
     };
   }
-
-  // ====== 更新操作 ======
-
-  /**
-   * 更新标签
-   */
-  async updateTag(
-    tagId: string,
-    updates: Partial<Omit<Tag, 'tagId' | 'createdAt'>>
-  ): Promise<void> {
-    // 先获取现有标签
-    const existing = await this.getTag(tagId);
-    if (!existing) throw new Error(`Tag not found: ${tagId}`);
-
-    // 系统标签不可修改
-    if (existing.source === 'system') {
-      throw new Error('System tag cannot be modified');
-    }
-
-    // 如果更新名称，检查唯一性
-    if (updates.name) {
-      const name = this.normalize(updates.name);
-
-      // 使用索引检查名称是否已存在
-      const other = await DBUtils.getOneByIndex<Tag>(
-        STORE_NAMES.TAGS,
-        'name',
-        name
-      );
-
-      if (other && other.tagId !== tagId) {
-        throw new Error('Tag name already exists');
-      }
-
-      updates.name = name;
-    }
-
-    // 更新标签
-    await DBUtils.put(STORE_NAMES.TAGS, {
-      ...existing,
-      ...updates
-    });
-  }
-
   // ====== 删除操作 ======
 
   /**
@@ -461,57 +432,4 @@ export class TagRepository {
     return this.getTagsBySource(TagSource.USER, pagination);
   }
 
-  /**
-   * 获取热门标签（基于名称长度，作为示例）
-   */
-  async getPopularTags(pagination?: PaginationParams): Promise<PaginationResult<Tag>> {
-    // 获取所有标签
-    const allTags = await DBUtils.getAll<Tag>(STORE_NAMES.TAGS);
-    
-    // 简单按名称长度排序（仅作为示例，实际应用中可能需要其他标准）
-    const sortedTags = [...allTags].sort((a, b) => {
-      // 简单的热度算法：名称长度越长，热度越高
-      return b.name.length - a.name.length;
-    });
-    
-    // 如果没有分页参数，返回全部数据
-    if (!pagination) {
-      return {
-        items: sortedTags,
-        total: sortedTags.length,
-        page: 0,
-        pageSize: sortedTags.length,
-        totalPages: 1
-      };
-    }
-    
-    // 应用分页
-    const start = pagination.page * pagination.pageSize;
-    const end = start + pagination.pageSize;
-    const paginatedTags = sortedTags.slice(start, end);
-    
-    return {
-      items: paginatedTags,
-      total: sortedTags.length,
-      page: pagination.page,
-      pageSize: pagination.pageSize,
-      totalPages: Math.ceil(sortedTags.length / pagination.pageSize)
-    };
-  }
-
-  /**
-   * 获取标签统计（占位）
-   */
-  async getTagStats(tagId: string): Promise<TagStats | null> {
-    // 在实际应用中，这可能需要从其他存储获取统计信息
-    return null;
-  }
-
-  /**
-   * 批量获取标签统计（占位）
-   */
-  async getTagsStats(tagIds: string[]): Promise<TagStats[]> {
-    // 在实际应用中，这可能需要从其他存储批量获取统计信息
-    return [];
-  }
 }

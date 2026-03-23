@@ -1,13 +1,12 @@
 import { chatComplete, parseTagsFromContent, LlmRequestError } from "../../engine/llm-client.js";
-import { 
-  getValue, 
-  setValue, 
-  getFollowedUPList,
-  getUPManualTags,
-  setUPManualTags,
-  addTagsToLibrary
+import {
+  getValue,
+  setValue,
+  CreatorRepository,
+  TagRepository
 } from "../../database/implementations/index.js";
-import type { BackgroundOptions, MessageLike } from "./common-types.js";
+import { Platform, TagSource } from "../../database/types/base.js";
+import type {MessageLike } from "./common-types.js";
 
 declare const chrome: {
   runtime?: {
@@ -24,13 +23,11 @@ declare const chrome: {
   };
 };
 
-function toUpUrl(mid: number): string {
-  return `https://space.bilibili.com/${mid}`;
-}
+import { buildUserSpaceUrl } from "../../utls/url-builder.js";
 
-const collectedPageData = new Map<number, any>();
-const classificationQueue: number[] = [];
-const pendingClassificationQueue: number[] = [];
+const collectedPageData = new Map<string, any>();
+const classificationQueue: string[] = [];
+const pendingClassificationQueue: string[] = [];
 let isClassifying = false;
 let pageClassifyActive = false;
 let pageClassifyStopping = false;
@@ -38,13 +35,17 @@ let pageClassifyTotal = 0;
 let pageClassifyProcessed = 0;
 let pageClassifyTitle = "自动分类";
 let pageClassifyDetail = "准备中...";
-const upNameMap = new Map<number, string>();
+const upNameMap = new Map<string, string>();
 
-const activeCollectionTabs = new Map<number, number>();
+const activeCollectionTabs = new Map<string, number>();
 const createdCollectionTabs = new Set<number>();
 
 const MAX_CONCURRENT_TABS = 3;
 const MAX_CLASSIFY_TAGS = 3;
+
+const creatorRepository = new CreatorRepository();
+const tagRepository = new TagRepository();
+
 
 function sendPageProgress(title: string, detail: string): void {
   if (typeof chrome === "undefined" || !chrome.runtime) return;
@@ -101,8 +102,8 @@ function resetPageClassifyState(): void {
   pageClassifyDetail = "准备中...";
 }
 
-async function finishPageClassification(options: BackgroundOptions = {}, detail: string = "分类完成"): Promise<void> {
-  await closeAllCollectionTabs(options);
+async function finishPageClassification(detail: string = "分类完成"): Promise<void> {
+  await closeAllCollectionTabs();
   const shouldNotify = pageClassifyActive;
   resetPageClassifyState();
   if (shouldNotify) {
@@ -111,8 +112,8 @@ async function finishPageClassification(options: BackgroundOptions = {}, detail:
   console.log("[Background] Page classify finished:", detail);
 }
 
-function notifyClassificationFailure(options: BackgroundOptions, title: string, message: string): void {
-  const notifications = options.notifications ?? (typeof chrome !== "undefined" ? chrome.notifications : undefined);
+function notifyClassificationFailure(title: string, message: string): void {
+  const notifications = typeof chrome !== "undefined" ? chrome.notifications : undefined;
   if (!notifications) {
     return;
   }
@@ -133,8 +134,8 @@ async function waitRandom(minMs = 1000, maxMs = 2000): Promise<void> {
   await wait(delay);
 }
 
-async function openNextUPPage(mid: number, tabId: number | undefined, options: BackgroundOptions = {}): Promise<void> {
-  const tabs = options.tabs ?? (typeof chrome !== "undefined" ? chrome.tabs : undefined);
+async function openNextUPPage(mid: string, tabId: number | undefined): Promise<void> {
+  const tabs = typeof chrome !== "undefined" ? chrome.tabs : undefined;
   if (!tabs) {
     console.log("[Background] ✗ Tabs API not available");
     return;
@@ -147,18 +148,18 @@ async function openNextUPPage(mid: number, tabId: number | undefined, options: B
 
   await waitRandom();
   console.log("[Background] Updating tab", tabId, "for UP:", mid);
-  tabs.update(tabId, { url: toUpUrl(mid) });
+  tabs.update(tabId, { url: buildUserSpaceUrl(mid) });
   activeCollectionTabs.set(mid, tabId);
 }
 
-function enqueueClassification(mid: number): void {
+function enqueueClassification(mid: string): void {
   if (!pendingClassificationQueue.includes(mid)) {
     pendingClassificationQueue.push(mid);
   }
 }
 
-async function closeCollectionTab(tabId: number, options: BackgroundOptions = {}): Promise<void> {
-  const tabs = options.tabs ?? (typeof chrome !== "undefined" ? chrome.tabs : undefined);
+async function closeCollectionTab(tabId: number): Promise<void> {
+  const tabs = typeof chrome !== "undefined" ? chrome.tabs : undefined;
   if (!tabs?.remove) {
     return;
   }
@@ -174,21 +175,21 @@ async function closeCollectionTab(tabId: number, options: BackgroundOptions = {}
   }
 }
 
-async function openNextAvailableUPPage(tabId: number, options: BackgroundOptions = {}): Promise<void> {
+async function openNextAvailableUPPage(tabId: number): Promise<void> {
   if (classificationQueue.length === 0) {
-    await closeCollectionTab(tabId, options);
+    await closeCollectionTab(tabId);
     return;
   }
   const nextMid = classificationQueue.shift();
   if (!nextMid) {
-    await closeCollectionTab(tabId, options);
+    await closeCollectionTab(tabId);
     return;
   }
-  await openNextUPPage(nextMid, tabId, options);
+  await openNextUPPage(nextMid, tabId);
 }
 
-async function closeAllCollectionTabs(options: BackgroundOptions = {}): Promise<void> {
-  const tabs = options.tabs ?? (typeof chrome !== "undefined" ? chrome.tabs : undefined);
+async function closeAllCollectionTabs(): Promise<void> {
+  const tabs = typeof chrome !== "undefined" ? chrome.tabs : undefined;
   if (!tabs?.remove || createdCollectionTabs.size === 0) {
     return;
   }
@@ -203,7 +204,7 @@ async function closeAllCollectionTabs(options: BackgroundOptions = {}): Promise<
 }
 
 export function handleCollectionTabRemoved(tabId: number): void {
-  let removedMid: number | null = null;
+  let removedMid: string | null = null;
   for (const [mid, activeTabId] of activeCollectionTabs.entries()) {
     if (activeTabId === tabId) {
       removedMid = mid;
@@ -223,17 +224,15 @@ export function handleCollectionTabRemoved(tabId: number): void {
 }
 
 export async function handleUPPageCollected(
-  message: MessageLike,
-  options: BackgroundOptions = {}
+  message: MessageLike
 ): Promise<void> {
-  const payload = message.payload as { mid?: number; name?: string; sign?: string; videos?: any[] } | undefined;
+  const payload = message.payload as { mid?: string; name?: string; sign?: string; videos?: any[] } | undefined;
   if (!payload?.mid) {
     console.warn("[Background] Invalid UP page data", payload);
     return;
   }
 
-  const getValueFn = options.getValueFn ?? ((key: string) => getValue(key));
-  const settings = (await getValueFn("settings")) as { userId?: number } | null;
+  const settings = (await getValue("settings")) as { userId?: string } | null;
   const currentUserId = settings?.userId;
   if (currentUserId && payload.mid === currentUserId) {
     console.log("[Background] Ignore current user page collection:", payload.mid);
@@ -264,7 +263,7 @@ export async function handleUPPageCollected(
       sendPageProgress(payload.name || "无效UP", "页面数据为空，已跳过");
     }
     if (tabId) {
-      await openNextAvailableUPPage(tabId, options);
+      await openNextAvailableUPPage(tabId);
     }
     return;
   }
@@ -272,38 +271,29 @@ export async function handleUPPageCollected(
   collectedPageData.set(payload.mid, payload);
 
   if (tabId) {
-    await openNextAvailableUPPage(tabId, options);
+    await openNextAvailableUPPage(tabId);
   }
   enqueueClassification(payload.mid);
-  await processNextClassification(options);
+  await processNextClassification();
 }
 
 export async function classifyUPWithPageData(
-  mid: number,
+  mid: string,
   pageData: any,
-  existingTags: string[] = [],
-  options: BackgroundOptions = {}
+  existingTags: string[] = []
 ): Promise<string[]> {
-  const classifyWithPageDataFn = options.classifyWithPageDataFn ?? defaultClassifyWithPageData;
-  return classifyWithPageDataFn(mid, pageData, existingTags);
+  return defaultClassifyWithPageData(mid, pageData, existingTags);
 }
 
 async function defaultClassifyWithPageData(
-  mid: number,
+  mid: string,
   pageData: any,
   existingTags: string[] = []
 ): Promise<string[]> {
   console.log("[Background] Starting LLM classification for UP:", mid);
-  console.log("[Background] UP name:", pageData.name);
-  console.log("[Background] UP sign:", pageData.sign);
-  console.log("[Background] Existing tags:", existingTags);
 
   const pageText = pageData.pageText ?? "";
-  const titles = pageData.videos?.slice(0, 10).map((v: any) => v.title) ?? [];
-
-  console.log("[Background] Page text length:", pageText.length);
-  console.log("[Background] Page text preview:", pageText.substring(0, 500));
-  console.log("[Background] Video titles for classification:", titles);
+  const titles = pageData.videos?.slice(0, 10).map((v: any) => v.title) ?? []
 
   const existing = existingTags.length > 0 ? existingTags.join("、") : "无";
   const prompt = [
@@ -336,7 +326,7 @@ async function defaultClassifyWithPageData(
   return tags;
 }
 
-async function abortForLlmError(mid: number, pageData: any, error: LlmRequestError, options: BackgroundOptions = {}): Promise<void> {
+async function abortForLlmError(mid: string, pageData: any, error: LlmRequestError): Promise<void> {
   const statusSuffix = typeof error.status === "number" ? `（HTTP ${error.status}）` : "";
   const upName = pageData?.name || upNameMap.get(mid) || `UP ${mid}`;
   console.error("[Background] Fatal LLM error, stop auto classification:", {
@@ -347,11 +337,11 @@ async function abortForLlmError(mid: number, pageData: any, error: LlmRequestErr
   });
   pageClassifyStopping = true;
   sendPageProgress("LLM 调用失败", `${upName}${statusSuffix}，自动分类已终止`);
-  notifyClassificationFailure(options, "自动分类已终止", `LLM 请求失败${statusSuffix}，请检查 API Key 或模型配置。`);
-  await finishPageClassification(options, "LLM 调用失败");
+  notifyClassificationFailure("自动分类已终止", `LLM 请求失败${statusSuffix}，请检查 API Key 或模型配置。`);
+  await finishPageClassification("LLM 调用失败");
 }
 
-async function processNextClassification(options: BackgroundOptions = {}): Promise<void> {
+async function processNextClassification(): Promise<void> {
   if (isClassifying) {
     console.log("[Background] Already classifying, skipping...");
     return;
@@ -359,7 +349,7 @@ async function processNextClassification(options: BackgroundOptions = {}): Promi
 
   if (!pageClassifyActive || pageClassifyStopping) {
     if (classificationQueue.length === 0 && pendingClassificationQueue.length === 0 && activeCollectionTabs.size === 0) {
-      await finishPageClassification(options, pageClassifyStopping ? "已停止" : "分类完成");
+      await finishPageClassification(pageClassifyStopping ? "已停止" : "分类完成");
     }
     return;
   }
@@ -367,7 +357,7 @@ async function processNextClassification(options: BackgroundOptions = {}): Promi
   if (pendingClassificationQueue.length === 0) {
     if (classificationQueue.length === 0 && activeCollectionTabs.size === 0) {
       console.log("[Background] Classification queue is empty, all done!");
-      await finishPageClassification(options);
+      await finishPageClassification();
     }
     return;
   }
@@ -391,11 +381,8 @@ async function processNextClassification(options: BackgroundOptions = {}): Promi
   }
 
   try {
-    const getValueFn = options.getValueFn ?? ((key: string) => getValue(key));
-    const setValueFn = options.setValueFn ?? ((key: string, value: unknown) => setValue(key, value));
-
     // 获取UP的手动标签
-    const existingTagIds = await getUPManualTags(mid);
+    const existingTagIds = await creatorRepository.getUPManualTags(mid,Platform.BILIBILI);
 
     console.log("[Background] Existing manual tags for UP", mid, ":", existingTagIds);
 
@@ -407,12 +394,12 @@ async function processNextClassification(options: BackgroundOptions = {}): Promi
         pageClassifyProcessed += 1;
         sendPageProgress(pageData.name || upNameMap.get(mid) || "已分类UP", "已存在可编辑标签，跳过");
       }
-      await processNextClassification(options);
+      await processNextClassification();
       return;
     }
 
     // 获取LLM分类的标签名称
-    const tagNames = await classifyUPWithPageData(mid, pageData, [], options);
+    const tagNames = await classifyUPWithPageData(mid, pageData, []);
     console.log("[Background] LLM classified tags for UP", mid, ":", tagNames);
 
     const normalizedTagNames = [...new Set(tagNames.map((tag) => tag.trim()).filter(Boolean))].slice(0, MAX_CLASSIFY_TAGS);
@@ -423,16 +410,39 @@ async function processNextClassification(options: BackgroundOptions = {}): Promi
         pageClassifyProcessed += 1;
         sendPageProgress(pageData.name || upNameMap.get(mid) || "分类结果为空", "没有生成有效标签，未写入");
       }
-      await processNextClassification(options);
+      await processNextClassification();
       return;
     }
 
     // 将标签名称添加到标签库，获取标签ID。自动分类产物按可编辑用户标签存储。
-    const addedTags = await addTagsToLibrary(normalizedTagNames, true);
-    const tagIds = addedTags.map(tag => tag.id);
+    // 创建标签并获取标签ID
+    const tagIds: string[] = [];
+    for (const tagName of normalizedTagNames) {
+      const tagId = await tagRepository.createTag({
+        name: tagName,
+        source: TagSource.USER
+      });
+      tagIds.push(tagId);
+    }
 
-    // 保存UP的手动标签
-    await setUPManualTags(mid, tagIds);
+
+    // 更新创作者的用户标签
+    const creator = await creatorRepository.getCreator(mid, Platform.BILIBILI);
+    if (creator) {
+      // 保留系统标签，只更新用户标签
+      const systemTagWeights = creator.tagWeights.filter(tw => tw.source === TagSource.SYSTEM);
+      const userTagWeights = tagIds.map(tagId => ({
+        tagId,
+        source: TagSource.USER,
+        count: 0,
+        createdAt: Date.now()
+      }));
+      
+      await creatorRepository.updateTagWeights(mid, Platform.BILIBILI, [
+        ...systemTagWeights,
+        ...userTagWeights
+      ]);
+    }
 
     console.log("[Background] ✓ Successfully classified UP", mid, "with tags:", normalizedTagNames, "tagIds:", tagIds);
     const remaining =
@@ -448,15 +458,15 @@ async function processNextClassification(options: BackgroundOptions = {}): Promi
 
     collectedPageData.delete(mid);
 
-    await setValueFn("classifyStatus", { lastUpdate: Date.now() });
+    await setValue("classifyStatus", { lastUpdate: Date.now() });
 
     isClassifying = false;
-    await processNextClassification(options);
+    await processNextClassification();
   } catch (error) {
     if (error instanceof LlmRequestError) {
       collectedPageData.delete(mid);
       isClassifying = false;
-      await abortForLlmError(mid, pageData, error, options);
+      await abortForLlmError(mid, pageData, error);
       return;
     }
 
@@ -470,7 +480,7 @@ async function processNextClassification(options: BackgroundOptions = {}): Promi
   }
 }
 
-export async function stopAutoClassification(options: BackgroundOptions = {}): Promise<boolean> {
+export async function stopAutoClassification(): Promise<boolean> {
   if (!pageClassifyActive) {
     return false;
   }
@@ -481,17 +491,17 @@ export async function stopAutoClassification(options: BackgroundOptions = {}): P
   collectedPageData.clear();
   sendPageProgress("正在停止分类", "关闭采集标签页并停止后续任务");
 
-  await closeAllCollectionTabs(options);
+  await closeAllCollectionTabs();
   activeCollectionTabs.clear();
 
   if (!isClassifying) {
-    await finishPageClassification(options, "已停止");
+    await finishPageClassification("已停止");
   }
 
   return true;
 }
 
-export async function startAutoClassification(options: BackgroundOptions = {}): Promise<boolean> {
+export async function startAutoClassification(): Promise<boolean> {
   console.log("[Background] ===== Starting auto classification =====");
 
   if (pageClassifyActive) {
@@ -500,8 +510,7 @@ export async function startAutoClassification(options: BackgroundOptions = {}): 
   }
 
   // 获取已关注的UP列表
-  const followedUPs = await getFollowedUPList();
-
+  const followedUPs = await creatorRepository.getFollowingCreators(Platform.BILIBILI);
 
   console.log("[Background] Loaded followed UP list:", followedUPs.length, "UPs");
 
@@ -516,25 +525,28 @@ export async function startAutoClassification(options: BackgroundOptions = {}): 
   // 筛选出没有手动标签的已关注UP
   const upsWithoutTags = [];
   for (const up of followedUPs) {
-    upNameMap.set(up.mid, up.name);
-    const existingTagIds = await getUPManualTags(up.mid);
+    upNameMap.set(up.creatorId, up.name);
+    const creator = await creatorRepository.getCreator(up.creatorId, Platform.BILIBILI);
+    const existingTagIds = creator?.tagWeights
+      .filter(tw => tw.source === TagSource.USER)
+      .map(tw => tw.tagId) || [];
+
     if (existingTagIds.length === 0) {
       upsWithoutTags.push(up);
-      console.log("[Background] UP", up.mid, "has no manual tags, will classify");
+      console.log("[Background] UP", up.creatorId, "has no manual tags, will classify");
     } else {
-      console.log("[Background] Skipping UP", up.mid, "- already has manual tags");
+      console.log("[Background] Skipping UP", up.creatorId, "- already has manual tags");
     }
   }
 
 
   for (const up of upsWithoutTags) {
-    classificationQueue.push(up.mid);
+    classificationQueue.push(up.creatorId);
   }
   pageClassifyTotal = classificationQueue.length;
   sendPageProgress("自动分类", `待分类 ${pageClassifyTotal} 位UP`);
 
   console.log("[Background] ✓ Classification queue created with", classificationQueue.length, "UPs");
-  console.log("[Background] First 5 UPs in queue:", classificationQueue.slice(0, 5));
 
   if (classificationQueue.length > 0) {
     const tabs = options.tabs ?? (typeof chrome !== "undefined" ? chrome.tabs : undefined);
@@ -552,7 +564,7 @@ export async function startAutoClassification(options: BackgroundOptions = {}): 
       if (!nextMid) break;
       await waitRandom();
       sendPageProgress(upNameMap.get(nextMid) || "自动分类", `正在打开页面采集内容 · ${pageClassifyProcessed}/${pageClassifyTotal}`);
-      const created = await tabs.create({ url: toUpUrl(nextMid), active: false });
+      const created = await tabs.create({ url: buildUserSpaceUrl(nextMid), active: false });
       if (created?.id) {
         activeCollectionTabs.set(nextMid, created.id);
         createdCollectionTabs.add(created.id);
@@ -562,6 +574,6 @@ export async function startAutoClassification(options: BackgroundOptions = {}): 
     return true;
   }
 
-  await finishPageClassification(options, "没有需要分类的UP");
+  await finishPageClassification("没有需要分类的UP");
   return false;
 }

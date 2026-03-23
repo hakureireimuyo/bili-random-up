@@ -15,7 +15,7 @@ export interface BiliResponse<T = any> {
  * UP主基础信息
  */
 export interface UpInfo {
-  mid: number;
+  mid: string;
   name: string;
   face: string;
 }
@@ -24,7 +24,7 @@ export interface UpInfo {
  * 关注的UP主信息
  */
 export interface FollowingUp {
-  mid: number;
+  mid: string;
   uname: string;
   face: string;
 }
@@ -40,7 +40,7 @@ export interface FollowingListResponse {
  * UP主详细信息
  */
 export interface UpDetailInfo extends UpInfo {
-  mid: number;
+  mid: string;
   name: string;
   face: string;
   sign: string;
@@ -50,7 +50,7 @@ export interface UpDetailInfo extends UpInfo {
  * 用户统计信息
  */
 export interface UserStatInfo {
-  mid: number;
+  mid: string;
   following: number;
   follower: number;
 }
@@ -72,7 +72,7 @@ export interface VideoInfo {
  * 视频标签
  */
 export interface VideoTag {
-  tag_id: number;
+  tag_id: string;
   tag_name: string;
 }
 
@@ -80,7 +80,7 @@ export interface VideoTag {
  * 推荐视频信息（包含统计数据）
  */
 export interface RelatedVideoInfo extends VideoInfo {
-  aid: number;
+  aid: string;
   stat: {
     view: number;
     danmaku: number;
@@ -97,8 +97,8 @@ export interface RelatedVideoInfo extends VideoInfo {
  * 收藏夹基础信息
  */
 export interface FavoriteFolderInfo {
-  id: number;
-  mid: number;
+  id: string;
+  mid: string;
   title: string;
   media_count: number;
 }
@@ -115,13 +115,13 @@ export interface FavoriteFolderListResponse {
  * 收藏夹中的视频信息
  */
 export interface FavoriteVideoInfo {
-  id: number;
+  id: string;
   title: string;
   cover: string;
   intro: string;
   duration: number;
   upper: {
-    mid: number;
+    mid: string;
   };
   pubtime: number;
   bvid: string;
@@ -132,8 +132,8 @@ export interface FavoriteVideoInfo {
  */
 export interface FavoriteContentResponse {
   info: {
-    id: number;
-    mid: number;
+    id: string;
+    mid: string;
     title: string;
     media_count: number;
   };
@@ -144,8 +144,8 @@ export interface FavoriteContentResponse {
  * 订阅的收藏夹信息
  */
 export interface SubscribedFavoriteFolderInfo {
-  id: number;
-  mid: number;
+  id: string;
+  mid: string;
   title: string;
   cover: string;
   intro: string;
@@ -164,14 +164,14 @@ export interface SubscribedFavoriteListResponse {
  * 订阅收藏夹中的视频信息
  */
 export interface SubscribedFavoriteVideoInfo {
-  id: number;
+  id: string;
   title: string;
   cover: string;
   duration: number;
   pubtime: number;
   bvid: string;
   upper: {
-    mid: number;
+    mid: string;
     name: string;
   };
   cnt_info: {
@@ -186,7 +186,7 @@ export interface SubscribedFavoriteVideoInfo {
  */
 export interface SubscribedFavoriteContentResponse {
   info: {
-    id: number;
+    id: string;
     title: string;
     cover: string;
     media_count: number;
