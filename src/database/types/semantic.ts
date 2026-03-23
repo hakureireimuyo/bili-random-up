@@ -47,6 +47,10 @@ export interface Category {
    */
   name: string;
   /**
+   * 父分区ID，用于构建分区层级结构
+   */
+  parentId?: ID;
+  /**
    * 包含的标签ID列表
    */
   tagIds: ID[];
@@ -54,6 +58,10 @@ export interface Category {
    * 分区描述
    */
   description?: string;
+  /**
+   * 创建时间
+   */
+  createdAt: Timestamp;
 }
 
 /**

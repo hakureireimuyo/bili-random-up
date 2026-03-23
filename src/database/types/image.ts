@@ -68,3 +68,18 @@ export interface ImageData {
    */
   data: Blob;
 }
+
+/**
+ * 图像实体
+ * 组合元数据和二进制数据的完整图像对象
+ */
+export interface Image {
+  /**
+   * 图像元数据
+   */
+  metadata: ImageMetadata;
+  /**
+   * 图像二进制数据
+   */
+  data: ImageData;
+}

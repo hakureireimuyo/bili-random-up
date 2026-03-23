@@ -6,56 +6,21 @@
 // Semantic 实现
 export { TagRepository } from './tag-repository.impl.js';
 export { CategoryRepository } from './category-repository.impl.js';
-export * from './bilibili-data-access.impl.js';
-export type {
-  AppSettings,
-  AppCategory,
-  AppTag,
-  AppVideo,
-  CategoryLibrary,
-  ClassifyStatus,
-  InterestProfile,
-  TagLibrary,
-  UPCache,
-  UPFaceDataCacheEntry,
-  UPTagCache,
-  UPTagCount,
-  UPTagWeight,
-  UPTagWeights,
-  UP,
-  UserInterest,
-  VideoCacheEntry
-} from '../types/app.js';
 
 // Creator 实现
 export { CreatorRepository } from './creator-repository.impl.js';
-export * from './creator-data-access.impl.js';
 
 // Video 实现
 export { VideoRepository } from './video-repository.impl.js';
 
-// Image 实现
-export { ImageRepository } from './image-repository.impl.js';
 
 // Behavior 实现
 export { WatchEventRepository } from './watch-event-repository.impl.js';
-export { InteractionEventRepository } from './interaction-event-repository.impl.js';
-export { SearchEventRepository } from './search-event-repository.impl.js';
 
 // Collection 实现
 export { CollectionRepository } from './collection-repository.impl.js';
 export { CollectionItemRepository } from './collection-item-repository.impl.js';
-export * from './collection-facade.impl.js';
 
-// Analytics 实现
-export { InterestScoreRepository } from './interest-score-repository.impl.js';
-export { InterestHistoryRepository } from './interest-history-repository.impl.js';
-export { InterestNodeRepository } from './interest-node-repository.impl.js';
-export { InterestCalculator } from './interest-calculator.impl.js';
-export { InterestGraphBuilder } from './interest-graph-builder.impl.js';
-export { InterestTrendAnalyzer } from './interest-trend-analyzer.impl.js';
-
-// Note 实现
-export { VideoNoteRepository } from './video-note-repository.impl.js';
-export { NoteSegmentRepository } from './note-segment-repository.impl.js';
-export { KnowledgeEntryRepository } from './knowledge-entry-repository.impl.js';
+// Settings 实现
+export { getValue, setValue, deleteValue } from './settings-repository.impl.js';
+export type { AppSettings } from './settings-repository.impl.js';

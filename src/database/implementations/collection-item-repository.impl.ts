@@ -1,10 +1,12 @@
 /**
  * CollectionItemRepository 实现
  * 职责：仅管理收藏项自身数据，不涉及收藏夹的任何操作
- * 能力边界：仅支持对自己和代表视频的信息获取
+ * 设计原则：基于IndexedDB特性，只实现高效操作
+ * - 支持基于主键和索引的增删改查
+ * - 支持分页获取数据
+ * - 避免需要全量数据的复杂查询、过滤、排序等操作
  */
 
-// 接口已移除，直接实现功能
 import { CollectionItem } from '../types/collection.js';
 import { DBUtils, STORE_NAMES } from '../indexeddb/index.js';
 
@@ -12,7 +14,10 @@ import { DBUtils, STORE_NAMES } from '../indexeddb/index.js';
  * CollectionItemRepository 实现类
  */
 export class CollectionItemRepository {
-
+  /**
+   * 根据主键获取收藏项
+   * @param itemId 收藏项ID
+   */
   async getItem(itemId: string): Promise<CollectionItem | null> {
     return DBUtils.get<CollectionItem>(
       STORE_NAMES.COLLECTION_ITEMS,
@@ -20,6 +25,70 @@ export class CollectionItemRepository {
     );
   }
 
+  /**
+   * 获取指定收藏夹的所有收藏项
+   * 基于collectionId索引查询
+   * @param collectionId 收藏夹ID
+   */
+  async getItemsByCollection(collectionId: string): Promise<CollectionItem[]> {
+    return DBUtils.getByIndex<CollectionItem>(
+      STORE_NAMES.COLLECTION_ITEMS,
+      'collectionId',
+      collectionId
+    );
+  }
+
+  /**
+   * 获取指定收藏夹的收藏项（分页）
+   * 基于collectionId索引查询
+   * @param collectionId 收藏夹ID
+   * @param offset 偏移量
+   * @param limit 每页数量
+   */
+  async getItemsByCollectionPaginated(
+    collectionId: string,
+    offset: number,
+    limit: number
+  ): Promise<CollectionItem[]> {
+    const items: CollectionItem[] = [];
+    let skipped = 0;
+
+    await DBUtils.cursor<CollectionItem>(
+      STORE_NAMES.COLLECTION_ITEMS,
+      (value) => {
+        if (skipped < offset) {
+          skipped++;
+          return;
+        }
+        items.push(value);
+        return items.length < limit;
+      },
+      'collectionId',
+      IDBKeyRange.only(collectionId)
+    );
+
+    return items;
+  }
+
+  /**
+   * 获取指定视频的所有收藏项
+   * 基于videoId索引查询
+   * @param videoId 视频ID
+   */
+  async getItemsByVideo(videoId: string): Promise<CollectionItem[]> {
+    return DBUtils.getByIndex<CollectionItem>(
+      STORE_NAMES.COLLECTION_ITEMS,
+      'videoId',
+      videoId
+    );
+  }
+
+  /**
+   * 根据收藏夹和视频ID获取收藏项
+   * 基于collectionId索引查询后过滤
+   * @param collectionId 收藏夹ID
+   * @param videoId 视频ID
+   */
   async getItemByCollectionAndVideo(
     collectionId: string,
     videoId: string
@@ -32,56 +101,174 @@ export class CollectionItemRepository {
     return items.find(item => item.videoId === videoId) || null;
   }
 
+  /**
+   * 创建收藏项
+   * @param item 收藏项数据（不包含itemId、collectionId、addedAt）
+   * @param collectionId 收藏夹ID
+   * @returns 创建的收藏项ID
+   */
+  async createItem(
+    collectionId: string,
+    item: Omit<CollectionItem, 'itemId' | 'collectionId' | 'addedAt'>
+  ): Promise<string> {
+    const itemId = `item_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    const newItem: CollectionItem = {
+      itemId,
+      collectionId,
+      addedAt: Date.now(),
+      ...item
+    };
+
+    await DBUtils.add(STORE_NAMES.COLLECTION_ITEMS, newItem);
+    return itemId;
+  }
+
+  /**
+   * 批量创建收藏项
+   * @param collectionId 收藏夹ID
+   * @param items 收藏项数据列表
+   * @returns 创建的收藏项ID列表
+   */
+  async createItems(
+    collectionId: string,
+    items: Omit<CollectionItem, 'itemId' | 'collectionId' | 'addedAt'>[]
+  ): Promise<string[]> {
+    const addedAt = Date.now();
+    const itemIds: string[] = [];
+    const itemsToAdd: CollectionItem[] = items.map(item => {
+      const itemId = `item_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+      itemIds.push(itemId);
+      return {
+        itemId,
+        collectionId,
+        addedAt,
+        ...item
+      };
+    });
+
+    await DBUtils.addBatch(STORE_NAMES.COLLECTION_ITEMS, itemsToAdd);
+    return itemIds;
+  }
+
+  /**
+   * 更新收藏项
+   * @param itemId 收藏项ID
+   * @param updates 要更新的字段
+   */
+  async updateItem(
+    itemId: string,
+    updates: Partial<Omit<CollectionItem, 'itemId' | 'collectionId' | 'addedAt'>>
+  ): Promise<void> {
+    const item = await this.getItem(itemId);
+    if (!item) {
+      throw new Error(`CollectionItem not found: ${itemId}`);
+    }
+
+    const updated: CollectionItem = {
+      ...item,
+      ...updates
+    };
+
+    await DBUtils.put(STORE_NAMES.COLLECTION_ITEMS, updated);
+  }
+
+  /**
+   * 删除收藏项
+   * @param itemId 收藏项ID
+   */
+  async deleteItem(itemId: string): Promise<void> {
+    await DBUtils.delete(STORE_NAMES.COLLECTION_ITEMS, itemId);
+  }
+
+  /**
+   * 批量删除收藏项
+   * @param itemIds 收藏项ID列表
+   */
+  async deleteItems(itemIds: string[]): Promise<void> {
+    if (itemIds.length === 0) return;
+    await DBUtils.deleteBatch(STORE_NAMES.COLLECTION_ITEMS, itemIds);
+  }
+
+  /**
+   * 删除指定收藏夹的所有收藏项
+   * @param collectionId 收藏夹ID
+   */
+  async deleteItemsByCollection(collectionId: string): Promise<void> {
+    const items = await this.getItemsByCollection(collectionId);
+    if (items.length === 0) return;
+
+    const itemIds = items.map(item => item.itemId);
+    await DBUtils.deleteBatch(STORE_NAMES.COLLECTION_ITEMS, itemIds);
+  }
+
+  /**
+   * 获取收藏项的视频ID
+   * @param itemId 收藏项ID
+   */
   async getVideoId(itemId: string): Promise<string | null> {
     const item = await this.getItem(itemId);
     return item?.videoId || null;
   }
 
+  /**
+   * 获取收藏项的收藏夹ID
+   * @param itemId 收藏项ID
+   */
   async getCollectionId(itemId: string): Promise<string | null> {
     const item = await this.getItem(itemId);
     return item?.collectionId || null;
   }
 
+  /**
+   * 获取收藏项的添加时间
+   * @param itemId 收藏项ID
+   */
   async getAddedAt(itemId: string): Promise<number | null> {
     const item = await this.getItem(itemId);
     return item?.addedAt || null;
   }
 
+  /**
+   * 获取收藏项的备注
+   * @param itemId 收藏项ID
+   */
   async getNote(itemId: string): Promise<string | null> {
     const item = await this.getItem(itemId);
     return item?.note || null;
   }
 
+  /**
+   * 获取收藏项的排序权重
+   * @param itemId 收藏项ID
+   */
   async getOrder(itemId: string): Promise<number | null> {
     const item = await this.getItem(itemId);
     return item?.order || null;
   }
 
+  /**
+   * 更新收藏项的备注
+   * @param itemId 收藏项ID
+   * @param note 备注内容
+   */
   async updateNote(itemId: string, note: string): Promise<void> {
-    const item = await this.getItem(itemId);
-    if (!item) {
-      throw new Error(`CollectionItem not found: ${itemId}`);
-    }
-
-    const updated: CollectionItem = {
-      ...item,
-      note
-    };
-
-    await DBUtils.put(STORE_NAMES.COLLECTION_ITEMS, updated);
+    await this.updateItem(itemId, { note });
   }
 
+  /**
+   * 更新收藏项的排序权重
+   * @param itemId 收藏项ID
+   * @param order 排序权重
+   */
   async updateOrder(itemId: string, order: number): Promise<void> {
-    const item = await this.getItem(itemId);
-    if (!item) {
-      throw new Error(`CollectionItem not found: ${itemId}`);
-    }
+    await this.updateItem(itemId, { order });
+  }
 
-    const updated: CollectionItem = {
-      ...item,
-      order
-    };
-
-    await DBUtils.put(STORE_NAMES.COLLECTION_ITEMS, updated);
+  /**
+   * 获取所有收藏项
+   * 注意：此方法会获取全部数据，请谨慎使用
+   */
+  async getAllItems(): Promise<CollectionItem[]> {
+    return DBUtils.getAll<CollectionItem>(STORE_NAMES.COLLECTION_ITEMS);
   }
 }

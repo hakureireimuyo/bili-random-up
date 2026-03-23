@@ -1,20 +1,31 @@
 /**
  * VideoRepository 实现
- * 实现视频相关的数据库操作
+ * 基于 IndexedDB 的视频仓库实现
+ * 只实现适合 IndexedDB 的高效操作：
+ * - 基于主键和索引的增删改查
+ * - 获取全部数据和分页查询
+ * - 视频与图片的联动操作
  */
 
-// 接口已移除，直接实现功能
 import { Video } from '../types/video.js';
-import { Platform, PaginationParams, PaginationResult, TimeRange } from '../types/base.js';
+import { Platform, PaginationParams, PaginationResult } from '../types/base.js';
 import { DBUtils, STORE_NAMES } from '../indexeddb/index.js';
-import { compressToTarget, shouldCompress} from '../../utls/image-compression.js'
+import { ImageRepository } from './image-repository.impl.js';
+import { ImagePurpose } from '../types/image.js';
 
 /**
  * VideoRepository 实现类
  */
 export class VideoRepository {
+  private imageRepository: ImageRepository;
+
+  constructor() {
+    this.imageRepository = new ImageRepository();
+  }
+
   /**
    * 创建或更新视频信息
+   * @param video 视频对象
    */
   async upsertVideo(video: Video): Promise<void> {
     await DBUtils.put(STORE_NAMES.VIDEOS, video);
@@ -22,13 +33,17 @@ export class VideoRepository {
 
   /**
    * 批量创建或更新视频信息
+   * @param videos 视频对象数组
    */
   async upsertVideos(videos: Video[]): Promise<void> {
     await DBUtils.putBatch(STORE_NAMES.VIDEOS, videos);
   }
 
   /**
-   * 获取视频信息
+   * 获取视频信息（基于主键）
+   * @param videoId 视频ID
+   * @param platform 平台类型
+   * @returns 视频对象，不存在返回 null
    */
   async getVideo(videoId: string, platform: Platform): Promise<Video | null> {
     const video = await DBUtils.get<Video>(STORE_NAMES.VIDEOS, videoId);
@@ -39,7 +54,10 @@ export class VideoRepository {
   }
 
   /**
-   * 获取多个视频信息
+   * 批量获取视频信息（基于主键）
+   * @param videoIds 视频ID数组
+   * @param platform 平台类型
+   * @returns 视频对象数组
    */
   async getVideos(videoIds: string[], platform: Platform): Promise<Video[]> {
     const allVideos = await DBUtils.getBatch<Video>(
@@ -50,7 +68,41 @@ export class VideoRepository {
   }
 
   /**
-   * 获取创作者的视频列表
+   * 获取所有视频（仅用于数据导出等场景）
+   * @returns 所有视频对象数组
+   */
+  async getAllVideos(): Promise<Video[]> {
+    return DBUtils.getAll<Video>(STORE_NAMES.VIDEOS);
+  }
+
+  /**
+   * 分页获取所有视频
+   * @param pagination 分页参数
+   * @returns 分页结果
+   */
+  async getVideosPaginated(pagination: PaginationParams): Promise<PaginationResult<Video>> {
+    const allVideos = await this.getAllVideos();
+    const total = allVideos.length;
+
+    const start = pagination.page * pagination.pageSize;
+    const end = start + pagination.pageSize;
+    const items = allVideos.slice(start, end);
+
+    return {
+      items,
+      total,
+      page: pagination.page,
+      pageSize: pagination.pageSize,
+      totalPages: Math.ceil(total / pagination.pageSize)
+    };
+  }
+
+  /**
+   * 获取创作者的视频列表（基于索引）
+   * @param creatorId 创作者ID
+   * @param platform 平台类型
+   * @param pagination 分页参数
+   * @returns 分页结果
    */
   async getCreatorVideos(
     creatorId: string,
@@ -80,71 +132,13 @@ export class VideoRepository {
   }
 
   /**
-   * 按标签查询视频
+   * 获取指定平台的视频列表（基于索引）
+   * @param platform 平台类型
+   * @param pagination 分页参数
+   * @returns 分页结果
    */
-  async getVideosByTags(
-    tagIds: string[],
+  async getVideosByPlatform(
     platform: Platform,
-    pagination: PaginationParams
-  ): Promise<PaginationResult<Video>> {
-    const allVideos = await DBUtils.getAll<Video>(STORE_NAMES.VIDEOS);
-
-    const filtered = allVideos.filter(v => 
-      v.platform === platform && !v.isInvalid && v.tags.some(tag => tagIds.includes(tag))
-    );
-
-    const sorted = filtered.sort((a, b) => b.publishTime - a.publishTime);
-
-    const start = pagination.page * pagination.pageSize;
-    const end = start + pagination.pageSize;
-    const items = sorted.slice(start, end);
-
-    return {
-      items,
-      total: sorted.length,
-      page: pagination.page,
-      pageSize: pagination.pageSize,
-      totalPages: Math.ceil(sorted.length / pagination.pageSize)
-    };
-  }
-
-  /**
-   * 按时间范围查询视频
-   */
-  async getVideosByTimeRange(
-    timeRange: TimeRange,
-    platform: Platform,
-    pagination: PaginationParams
-  ): Promise<PaginationResult<Video>> {
-    const allVideos = await DBUtils.getAll<Video>(STORE_NAMES.VIDEOS);
-
-    const filtered = allVideos.filter(v =>
-      v.platform === platform && !v.isInvalid &&
-      v.publishTime >= timeRange.startTime &&
-      v.publishTime <= timeRange.endTime
-    );
-
-    const sorted = filtered.sort((a, b) => b.publishTime - a.publishTime);
-
-    const start = pagination.page * pagination.pageSize;
-    const end = start + pagination.pageSize;
-    const items = sorted.slice(start, end);
-
-    return {
-      items,
-      total: sorted.length,
-      page: pagination.page,
-      pageSize: pagination.pageSize,
-      totalPages: Math.ceil(sorted.length / pagination.pageSize)
-    };
-  }
-
-  /**
-   * 搜索视频
-   */
-  async searchVideos(
-    platform: Platform,
-    keyword: string,
     pagination: PaginationParams
   ): Promise<PaginationResult<Video>> {
     const allVideos = await DBUtils.getByIndex<Video>(
@@ -153,14 +147,7 @@ export class VideoRepository {
       platform
     );
 
-    const lowerKeyword = keyword.toLowerCase();
-    const filtered = allVideos.filter(v =>
-      !v.isInvalid && (
-        v.title.toLowerCase().includes(lowerKeyword) ||
-        v.description.toLowerCase().includes(lowerKeyword)
-      )
-    );
-
+    const filtered = allVideos.filter(v => !v.isInvalid);
     const sorted = filtered.sort((a, b) => b.publishTime - a.publishTime);
 
     const start = pagination.page * pagination.pageSize;
@@ -177,14 +164,64 @@ export class VideoRepository {
   }
 
   /**
-   * 删除视频
+   * 删除视频（联动删除关联的封面图片）
+   * @param videoId 视频ID
+   * @param platform 平台类型
    */
   async deleteVideo(videoId: string, platform: Platform): Promise<void> {
+    const video = await this.getVideo(videoId, platform);
+    if (!video) {
+      return;
+    }
+
+    // 如果视频有关联的封面图片ID，删除图片
+    if (video.picture) {
+      try {
+        await this.imageRepository.deleteImage(video.picture);
+      } catch (error) {
+        console.error(`[VideoRepository] Failed to delete cover image for video ${videoId}:`, error);
+      }
+    }
+
+    // 删除视频记录
     await DBUtils.delete(STORE_NAMES.VIDEOS, videoId);
   }
 
   /**
+   * 批量删除视频（联动删除关联的封面图片）
+   * @param videoIds 视频ID数组
+   * @param platform 平台类型
+   */
+  async deleteVideos(videoIds: string[], platform: Platform): Promise<void> {
+    // 获取所有视频以查找关联的图片
+    const videos = await this.getVideos(videoIds, platform);
+    if (videos.length === 0) {
+      return;
+    }
+
+    // 收集需要删除的图片ID
+    const imageIds = videos
+      .map(v => v.picture)
+      .filter((id): id is string => !!id);
+
+    // 删除关联的图片
+    if (imageIds.length > 0) {
+      try {
+        await this.imageRepository.deleteImages(imageIds);
+      } catch (error) {
+        console.error('[VideoRepository] Failed to delete cover images:', error);
+      }
+    }
+
+    // 批量删除视频记录
+    await DBUtils.deleteBatch(STORE_NAMES.VIDEOS, videoIds);
+  }
+
+  /**
    * 更新视频标签
+   * @param videoId 视频ID
+   * @param platform 平台类型
+   * @param tags 标签ID数组
    */
   async updateVideoTags(videoId: string, platform: Platform, tags: string[]): Promise<void> {
     const video = await this.getVideo(videoId, platform);
@@ -201,16 +238,16 @@ export class VideoRepository {
   }
 
   /**
-   * 更新视频封面缓存
+   * 更新视频封面图片（使用 ImageRepository）
    * @param videoId 视频ID
-   * @param platform 平台
-   * @param picture 图片数据（base64）
+   * @param platform 平台类型
+   * @param imageBlob 图片 Blob 数据
    * @param url 图片URL（可选，用于判断是否为同一图片）
    */
   async updateVideoPicture(
     videoId: string,
     platform: Platform,
-    picture: string,
+    imageBlob: Blob,
     url?: string
   ): Promise<void> {
     const video = await this.getVideo(videoId, platform);
@@ -225,83 +262,94 @@ export class VideoRepository {
       return;
     }
 
-    let finalPicture = picture;
+    // 创建新的图片记录
+    const image = await this.imageRepository.createImage({
+      purpose: ImagePurpose.COVER,
+      data: imageBlob
+    });
 
-    try {
-      // 判断是否需要压缩
-      if (await shouldCompress(picture)) {
-        finalPicture = await compressToTarget(picture);
-      }
-    } catch (e) {
-      console.warn("[VideoRepository] compress failed:", videoId, e);
-      // 出错时 fallback 原图
-    }
-
+    // 更新视频记录，关联新的图片ID
     await this.upsertVideo({
       ...video,
-      picture: finalPicture
+      coverUrl: url,
+      picture: image.metadata.id
     });
   }
 
   /**
-   * 获取所有视频
+   * 获取视频封面图片
+   * @param videoId 视频ID
+   * @param platform 平台类型
+   * @returns 图片 Blob 数据，不存在返回 null
    */
-  async getAllVideos(): Promise<Video[]> {
-    return DBUtils.getAll<Video>(STORE_NAMES.VIDEOS);
+  async getVideoPicture(videoId: string, platform: Platform): Promise<Blob | null> {
+    const video = await this.getVideo(videoId, platform);
+    if (!video || !video.picture) {
+      return null;
+    }
+
+    const image = await this.imageRepository.getImage(video.picture);
+    return image?.data?.data || null;
   }
 
   /**
- * 扫描数据库并压缩已有图片
- */
-  async compressAllVideoPictures(
-    platform: Platform,
-    onProgress?: (done: number, total: number) => void
-  ): Promise<void> {
-    console.log(`[VideoRepository] Starting compression for platform: ${platform}`);
-    const allVideos = await DBUtils.getAll<Video>(STORE_NAMES.VIDEOS);
-    console.log(`[VideoRepository] Found ${allVideos.length} videos in database`);
-
-    let processed = 0;
-    const total = allVideos.length;
-    let compressedCount = 0;
-    let skippedCount = 0;
-    let errorCount = 0;
-
-    for (const video of allVideos) {
-      if (video.platform !== platform || video.isInvalid || !video.picture) {
-        processed++;
-        skippedCount++;
-        continue;
-      }
-
-      try {
-        console.log(`[VideoRepository] Processing video ${video.videoId} (${processed + 1}/${total})`);
-        if (await shouldCompress(video.picture)) {
-          console.log(`[VideoRepository] Compressing picture for video ${video.videoId}`);
-          const compressed = await compressToTarget(video.picture);
-
-          await DBUtils.put(STORE_NAMES.VIDEOS, {
-            ...video,
-            picture: compressed
-          });
-          compressedCount++;
-          console.log(`[VideoRepository] Successfully compressed picture for video ${video.videoId}`);
-        } else {
-          console.log(`[VideoRepository] Skipping video ${video.videoId} - picture does not need compression`);
-          skippedCount++;
-        }
-      } catch (e) {
-        console.error(`[VideoRepository] Failed to compress picture for video ${video.videoId}:`, e);
-        errorCount++;
-      }
-
-      processed++;
-
-      // 进度回调（可用于 UI）
-      onProgress?.(processed, total);
+   * 标记视频为失效
+   * @param videoId 视频ID
+   * @param platform 平台类型
+   */
+  async markVideoAsInvalid(videoId: string, platform: Platform): Promise<void> {
+    const video = await this.getVideo(videoId, platform);
+    if (!video) {
+      throw new Error(`Video not found: ${videoId}`);
     }
 
-    console.log(`[VideoRepository] Compression completed. Total: ${total}, Compressed: ${compressedCount}, Skipped: ${skippedCount}, Errors: ${errorCount}`);
+    await this.upsertVideo({
+      ...video,
+      isInvalid: true
+    });
   }
 
+  /**
+   * 批量标记视频为失效
+   * @param videoIds 视频ID数组
+   * @param platform 平台类型
+   */
+  async markVideosAsInvalid(videoIds: string[], platform: Platform): Promise<void> {
+    const videos = await this.getVideos(videoIds, platform);
+    if (videos.length === 0) {
+      return;
+    }
+
+    const updatedVideos = videos.map(v => ({
+      ...v,
+      isInvalid: true
+    }));
+
+    await this.upsertVideos(updatedVideos);
+  }
+
+  /**
+   * 清理失效视频（联动删除关联的封面图片）
+   * @returns 清理的视频数量
+   */
+  async cleanupInvalidVideos(): Promise<number> {
+    const allVideos = await this.getAllVideos();
+    const invalidVideos = allVideos.filter(v => v.isInvalid);
+
+    if (invalidVideos.length === 0) {
+      return 0;
+    }
+
+    const videoIds = invalidVideos.map(v => v.videoId);
+    const platforms = new Set(invalidVideos.map(v => v.platform));
+
+    // 为每个平台删除视频
+    for (const platform of platforms) {
+      const platformVideos = invalidVideos.filter(v => v.platform === platform);
+      const platformVideoIds = platformVideos.map(v => v.videoId);
+      await this.deleteVideos(platformVideoIds, platform);
+    }
+
+    return invalidVideos.length;
+  }
 }

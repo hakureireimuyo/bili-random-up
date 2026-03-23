@@ -1,8 +1,8 @@
 /**
- * ImageRepository（分表重构版）
+ * ImageRepository（基于IndexedDB的图片仓库实现）
+ * 实现图片数据和元数据的分离存储，支持按需加载图片数据
  */
 
-// 接口已移除，直接实现功能
 import { Image, ImageMetadata, ImageData, ImagePurpose } from '../types/image.js';
 import { PaginationParams, PaginationResult } from '../types/base.js';
 import { DBUtils, STORE_NAMES } from '../indexeddb/index.js';
@@ -15,27 +15,18 @@ function generateId(): string {
 export class ImageRepository {
 
   /**
-   * 访问时间更新阈值（避免频繁写）
-   */
-  private ACCESS_UPDATE_THRESHOLD = 60_000; // 1分钟
-
-  private normalizeTimeUpdate(lastAccessTime: number): boolean {
-    return Date.now() - lastAccessTime > this.ACCESS_UPDATE_THRESHOLD;
-  }
-
-  /**
    * 创建图像
+   * @param image 图片对象，包含元数据和图片数据
+   * @returns 返回完整的图片对象（包含元数据和图片数据）
    */
   async createImage(
     image: Omit<ImageMetadata, 'id' | 'createdAt' | 'lastAccessTime' | 'dataId'> & { data: Blob }
   ): Promise<Image> {
-
     const now = Date.now();
-
     const metadataId = generateId();
     const dataId = generateId();
 
-    // 压缩
+    // 压缩图片
     let finalData: Blob;
     try {
       const dataUrl = await this.blobToDataUrl(image.data);
@@ -48,6 +39,7 @@ export class ImageRepository {
       finalData = image.data;
     }
 
+    // 创建元数据和图片数据对象
     const metadata: ImageMetadata = {
       id: metadataId,
       purpose: image.purpose,
@@ -61,9 +53,11 @@ export class ImageRepository {
       data: finalData
     };
 
-    // ⚠️ 顺序写入（可升级为事务）
-    await DBUtils.add(STORE_NAMES.IMAGES_DATA, data);
-    await DBUtils.add(STORE_NAMES.IMAGES_METADATA, metadata);
+    // 使用事务确保数据一致性
+    await DBUtils.transaction([
+      { store: STORE_NAMES.IMAGES_METADATA, operation: 'add', value: metadata },
+      { store: STORE_NAMES.IMAGES_DATA, operation: 'add', value: data }
+    ]);
 
     return {
       metadata,
@@ -72,9 +66,11 @@ export class ImageRepository {
   }
 
   /**
-   * 获取图像（按需加载）
+   * 获取图片元数据（不加载图片数据）
+   * @param id 图片ID
+   * @returns 图片元数据
    */
-  async getImage(id: string): Promise<Image | null> {
+  async getImageMetadata(id: string): Promise<ImageMetadata | null> {
     const metadata = await DBUtils.get<ImageMetadata>(
       STORE_NAMES.IMAGES_METADATA,
       id
@@ -82,20 +78,32 @@ export class ImageRepository {
 
     if (!metadata) return null;
 
-    const data = await DBUtils.get<ImageData>(
+    return metadata;
+  }
+
+  /**
+   * 获取图片数据（按需加载）
+   * @param dataId 图片数据ID
+   * @returns 图片数据
+   */
+  async getImageData(dataId: string): Promise<ImageData | null> {
+    return DBUtils.get<ImageData>(
       STORE_NAMES.IMAGES_DATA,
-      metadata.dataId
+      dataId
     );
+  }
 
+  /**
+   * 获取完整图片（包含元数据和图片数据）
+   * @param id 图片ID
+   * @returns 完整图片对象
+   */
+  async getImage(id: string): Promise<Image | null> {
+    const metadata = await this.getImageMetadata(id);
+    if (!metadata) return null;
+
+    const data = await this.getImageData(metadata.dataId);
     if (!data) return null;
-
-    // 节流更新访问时间
-    if (this.normalizeTimeUpdate(metadata.lastAccessTime)) {
-      await DBUtils.put(STORE_NAMES.IMAGES_METADATA, {
-        ...metadata,
-        lastAccessTime: Date.now()
-      });
-    }
 
     return {
       metadata,
@@ -104,38 +112,54 @@ export class ImageRepository {
   }
 
   /**
-   * 批量获取（优化访问时间更新）
+   * 批量获取图片元数据（不加载图片数据）
+   * @param ids 图片ID数组
+   * @returns 图片元数据数组
    */
-  async getImages(ids: string[]): Promise<Image[]> {
-    const metas = await DBUtils.getBatch<ImageMetadata>(
+  async getImagesMetadata(ids: string[]): Promise<ImageMetadata[]> {
+    return DBUtils.getBatch<ImageMetadata>(
       STORE_NAMES.IMAGES_METADATA,
       ids
     );
+  }
 
-    const dataIds = metas.map(m => m.dataId);
-
-    const datas = await DBUtils.getBatch<ImageData>(
+  /**
+   * 批量获取图片数据（按需加载）
+   * @param dataIds 图片数据ID数组
+   * @returns 图片数据数组
+   */
+  async getImagesData(dataIds: string[]): Promise<ImageData[]> {
+    return DBUtils.getBatch<ImageData>(
       STORE_NAMES.IMAGES_DATA,
       dataIds
     );
+  }
 
+  /**
+   * 批量获取完整图片（包含元数据和图片数据）
+   * @param ids 图片ID数组
+   * @returns 完整图片对象数组
+   */
+  async getImages(ids: string[]): Promise<Image[]> {
+    const metas = await this.getImagesMetadata(ids);
+    if (metas.length === 0) return [];
+
+    const dataIds = metas.map(m => m.dataId);
+    const datas = await this.getImagesData(dataIds);
     const dataMap = new Map(datas.map(d => [d.id, d]));
 
     const now = Date.now();
     const needUpdate: ImageMetadata[] = [];
-
     const result: Image[] = [];
 
     for (const meta of metas) {
       const data = dataMap.get(meta.dataId);
       if (!data) continue;
 
-      if (now - meta.lastAccessTime > this.ACCESS_UPDATE_THRESHOLD) {
         needUpdate.push({
           ...meta,
           lastAccessTime: now
         });
-      }
 
       result.push({
         metadata: meta,
@@ -151,19 +175,22 @@ export class ImageRepository {
   }
 
   /**
-   * 按用途查询（只查 metadata，不加载 Blob）
+   * 按用途查询图片元数据（不加载图片数据）
+   * @param purpose 图片用途
+   * @param pagination 分页参数
+   * @returns 分页结果（只包含元数据）
    */
-  async getImagesByPurpose(
+  async getImagesMetadataByPurpose(
     purpose: ImagePurpose,
     pagination: PaginationParams
   ): Promise<PaginationResult<ImageMetadata>> {
-
     const items: ImageMetadata[] = [];
     let total = 0;
 
     const offset = pagination.page * pagination.pageSize;
     let skipped = 0;
 
+    // 使用游标遍历，只获取元数据
     await DBUtils.cursor<ImageMetadata>(
       STORE_NAMES.IMAGES_METADATA,
       (value) => {
@@ -197,17 +224,48 @@ export class ImageRepository {
   }
 
   /**
-   * 更新图像数据
+   * 获取指定用途的图片数据（按需加载）
+   * @param purpose 图片用途
+   * @param pagination 分页参数
+   * @returns 分页结果（包含元数据和图片数据）
+   */
+  async getImagesByPurpose(
+    purpose: ImagePurpose,
+    pagination: PaginationParams
+  ): Promise<PaginationResult<Image>> {
+    const metadataResult = await this.getImagesMetadataByPurpose(purpose, pagination);
+    if (metadataResult.items.length === 0) {
+      return {
+        items: [],
+        total: 0,
+        page: pagination.page,
+        pageSize: pagination.pageSize,
+        totalPages: 0
+      };
+    }
+
+    const metadataIds = metadataResult.items.map(m => m.id);
+    const images = await this.getImages(metadataIds);
+
+    return {
+      items: images,
+      total: metadataResult.total,
+      page: pagination.page,
+      pageSize: pagination.pageSize,
+      totalPages: metadataResult.totalPages
+    };
+  }
+
+  /**
+   * 更新图片数据（保留元数据）
+   * @param id 图片ID
+   * @param newData 新的图片数据
    */
   async updateImageData(id: string, newData: Blob): Promise<void> {
-    const metadata = await DBUtils.get<ImageMetadata>(
-      STORE_NAMES.IMAGES_METADATA,
-      id
-    );
+    const metadata = await this.getImageMetadata(id);
     if (!metadata) throw new Error('Image not found');
 
     let finalData: Blob;
-
     try {
       const dataUrl = await this.blobToDataUrl(newData);
       if (await shouldCompress(dataUrl, metadata.purpose)) {
@@ -219,51 +277,73 @@ export class ImageRepository {
       finalData = newData;
     }
 
+    // 只更新图片数据，保留元数据
     await DBUtils.put(STORE_NAMES.IMAGES_DATA, {
       id: metadata.dataId,
       data: finalData
     });
 
-    if (this.normalizeTimeUpdate(metadata.lastAccessTime)) {
-      await DBUtils.put(STORE_NAMES.IMAGES_METADATA, {
-        ...metadata,
-        lastAccessTime: Date.now()
-      });
-    }
+    await DBUtils.put(STORE_NAMES.IMAGES_METADATA, {
+      ...metadata,
+      lastAccessTime: Date.now()
+    });
   }
 
   /**
-   * 删除图像（双表删除）
+   * 更新图片元数据
+   * @param id 图片ID
+   * @param newMetadata 新的元数据（不包含dataId）
+   */
+  async updateImageMetadata(id: string, newMetadata: Partial<Omit<ImageMetadata, 'id' | 'dataId'>>): Promise<void> {
+    const metadata = await this.getImageMetadata(id);
+    if (!metadata) throw new Error('Image not found');
+
+    // 合并更新元数据
+    const updatedMetadata = {
+      ...metadata,
+      ...newMetadata
+    };
+
+    await DBUtils.put(STORE_NAMES.IMAGES_METADATA, updatedMetadata);
+  }
+
+  /**
+   * 删除图片（同时删除元数据和图片数据）
+   * @param id 图片ID
    */
   async deleteImage(id: string): Promise<void> {
-    const metadata = await DBUtils.get<ImageMetadata>(
-      STORE_NAMES.IMAGES_METADATA,
-      id
-    );
-
+    const metadata = await this.getImageMetadata(id);
     if (!metadata) return;
 
-    await DBUtils.delete(STORE_NAMES.IMAGES_METADATA, id);
-    await DBUtils.delete(STORE_NAMES.IMAGES_DATA, metadata.dataId);
+    // 使用事务同时删除元数据和图片数据
+    await DBUtils.transaction([
+      { store: STORE_NAMES.IMAGES_METADATA, operation: 'delete', key: id },
+      { store: STORE_NAMES.IMAGES_DATA, operation: 'delete', key: metadata.dataId }
+    ]);
   }
 
   /**
-   * 批量删除
+   * 批量删除图片
+   * @param ids 图片ID数组
    */
   async deleteImages(ids: string[]): Promise<void> {
-    const metas = await DBUtils.getBatch<ImageMetadata>(
-      STORE_NAMES.IMAGES_METADATA,
-      ids
-    );
+    const metas = await this.getImagesMetadata(ids);
+    if (metas.length === 0) return;
 
+    const metadataIds = metas.map(m => m.id);
     const dataIds = metas.map(m => m.dataId);
 
-    await DBUtils.deleteBatch(STORE_NAMES.IMAGES_METADATA, ids);
-    await DBUtils.deleteBatch(STORE_NAMES.IMAGES_DATA, dataIds);
+    // 使用事务批量删除
+    await DBUtils.transaction([
+      { store: STORE_NAMES.IMAGES_METADATA, operation: 'deleteBatch', keys: metadataIds },
+      { store: STORE_NAMES.IMAGES_DATA, operation: 'deleteBatch', keys: dataIds }
+    ]);
   }
 
   /**
-   * 清理过期数据（只扫描 metadata）
+   * 清理过期图片（只扫描元数据）
+   * @param expireTime 过期时间戳
+   * @returns 清理的图片数量
    */
   async cleanupExpiredImages(expireTime: number): Promise<number> {
     const expiredMetaIds: string[] = [];
@@ -271,6 +351,7 @@ export class ImageRepository {
 
     const range = IDBKeyRange.upperBound(expireTime);
 
+    // 使用游标遍历元数据，找出过期项
     await DBUtils.cursor<ImageMetadata>(
       STORE_NAMES.IMAGES_METADATA,
       (value) => {
@@ -282,45 +363,40 @@ export class ImageRepository {
     );
 
     if (expiredMetaIds.length > 0) {
-      await DBUtils.deleteBatch(STORE_NAMES.IMAGES_METADATA, expiredMetaIds);
-      await DBUtils.deleteBatch(STORE_NAMES.IMAGES_DATA, expiredDataIds);
+      // 使用事务批量删除
+      await DBUtils.transaction([
+        { store: STORE_NAMES.IMAGES_METADATA, operation: 'deleteBatch', keys: expiredMetaIds },
+        { store: STORE_NAMES.IMAGES_DATA, operation: 'deleteBatch', keys: expiredDataIds }
+      ]);
     }
 
     return expiredMetaIds.length;
   }
 
   /**
-   * 获取所有图像
+   * 获取指定用途的图片元数据ID列表
+   * @param purpose 图片用途
+   * @returns 图片ID数组
    */
-  async getAllImages(): Promise<Image[]> {
-    const items: Image[] = [];
-    
+  async getImageIdsByPurpose(purpose: ImagePurpose): Promise<string[]> {
+    const ids: string[] = [];
+
     await DBUtils.cursor<ImageMetadata>(
       STORE_NAMES.IMAGES_METADATA,
-      (metadata) => {
-        const dataPromise = DBUtils.get<ImageData>(
-          STORE_NAMES.IMAGES_DATA,
-          metadata.dataId
-        );
-        
-        dataPromise.then(data => {
-          if (data) {
-            items.push({
-              metadata,
-              data
-            });
-          }
-        });
-        
-        return true;
+      (value) => {
+        if (value.purpose === purpose) {
+          ids.push(value.id);
+        }
       }
     );
-    
-    return items;
+
+    return ids;
   }
 
   /**
-   * 辅助：Blob → DataURL
+   * 辅助方法：Blob转DataURL
+   * @param blob 二进制数据
+   * @returns DataURL字符串
    */
   private async blobToDataUrl(blob: Blob): Promise<string> {
     return new Promise((resolve, reject) => {

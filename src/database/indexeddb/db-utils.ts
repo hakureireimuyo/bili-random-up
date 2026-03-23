@@ -374,4 +374,104 @@ static async query<T>(
 
   return results;
 }
+
+  /**
+   * 执行跨多个存储的原子操作
+   * @param operations 操作列表，每个操作包含存储名称、操作类型和数据
+   * @returns Promise<void>
+   */
+  static async transaction(operations: Array<{
+    store: string;
+    operation: 'add' | 'put' | 'delete' | 'deleteBatch';
+    value?: any;
+    key?: IDBValidKey;
+    keys?: IDBValidKey[];
+  }>): Promise<void> {
+    if (operations.length === 0) return;
+
+    // 获取所有涉及的存储名称
+    const storeNames = Array.from(new Set(operations.map(op => op.store)));
+    
+    // 创建读写事务
+    const db = await dbManager.getDB();
+    const transaction = db.transaction(storeNames, 'readwrite');
+    
+    return new Promise((resolve, reject) => {
+      let completed = 0;
+      let hasError = false;
+      
+      const handleComplete = () => {
+        completed++;
+        if (completed === operations.length) {
+          if (!hasError) {
+            resolve();
+          }
+        }
+      };
+      
+      const handleError = (error: any) => {
+        hasError = true;
+        reject(error);
+      };
+      
+      transaction.onerror = () => {
+        handleError(transaction.error);
+      };
+      
+      transaction.onabort = () => {
+        handleError(new Error('Transaction was aborted'));
+      };
+      
+      // 执行每个操作
+      operations.forEach(op => {
+        try {
+          const store = transaction.objectStore(op.store);
+          
+          switch (op.operation) {
+            case 'add':
+              if (!op.value) {
+                throw new Error('Add operation requires a value');
+              }
+              store.add(op.value);
+              break;
+              
+            case 'put':
+              if (!op.value) {
+                throw new Error('Put operation requires a value');
+              }
+              store.put(op.value);
+              break;
+              
+            case 'delete':
+              if (!op.key) {
+                throw new Error('Delete operation requires a key');
+              }
+              store.delete(op.key);
+              break;
+              
+            case 'deleteBatch':
+              if (!op.keys || op.keys.length === 0) {
+                throw new Error('DeleteBatch operation requires keys');
+              }
+              op.keys.forEach(key => store.delete(key));
+              break;
+          }
+          
+          // 监听每个请求的完成事件
+          if (op.operation === 'add' || op.operation === 'put') {
+            store.getAll().onsuccess = handleComplete;
+          } else if (op.operation === 'delete') {
+            if (op.key) {
+              store.get(op.key).onsuccess = handleComplete;
+            }
+          } else if (op.operation === 'deleteBatch') {
+            // 对于批量删除，直接调用完成处理
+            handleComplete();
+          }
+        } catch (error) {
+          handleError(error);
+        }
+      });
+    });
+  }
 }

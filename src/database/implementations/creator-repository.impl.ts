@@ -1,19 +1,35 @@
 /**
  * CreatorRepository 实现
  * 实现创作者相关的数据库操作
+ * 专门针对IndexedDB优化，只提供获取全部数据、分页获取数据以及基于索引的增删改查方法
  */
 
-// 接口已移除，直接实现功能
-import { Creator, CreatorStats } from '../types/creator.js';
+import { Creator } from '../types/creator.js';
 import { Platform, PaginationParams, PaginationResult } from '../types/base.js';
 import { DBUtils, STORE_NAMES } from '../indexeddb/index.js';
+import { ImageRepository } from './image-repository.impl.js';
+import {ImagePurpose } from '../types/image.js'
 
 /**
  * CreatorRepository 实现类
+ * 专门针对IndexedDB优化，避免复杂条件查询过滤排序等低效操作
  */
 export class CreatorRepository {
   /**
+   * ImageRepository依赖
+   */
+  private imageRepository: ImageRepository;
+
+  /**
+   * 构造函数
+   * @param imageRepository 图片仓库实例
+   */
+  constructor(imageRepository?: ImageRepository) {
+    this.imageRepository = imageRepository || new ImageRepository();
+  }
+  /**
    * 创建或更新创作者信息
+   * 基于主键索引的创建或更新操作
    */
   async upsertCreator(creator: Creator): Promise<void> {
     await DBUtils.put(STORE_NAMES.CREATORS, creator);
@@ -21,13 +37,15 @@ export class CreatorRepository {
 
   /**
    * 批量创建或更新创作者信息
+   * 基于主键索引的批量创建或更新操作
    */
   async upsertCreators(creators: Creator[]): Promise<void> {
     await DBUtils.putBatch(STORE_NAMES.CREATORS, creators);
   }
 
   /**
-   * 获取创作者信息
+   * 获取单个创作者信息
+   * 基于复合索引(creatorId+platform)的查询
    */
   async getCreator(creatorId: string, platform: Platform): Promise<Creator | null> {
     const creators = await DBUtils.getByIndex<Creator>(
@@ -39,7 +57,8 @@ export class CreatorRepository {
   }
 
   /**
-   * 获取多个创作者信息
+   * 批量获取多个创作者信息
+   * 基于主键索引的批量查询
    */
   async getCreators(creatorIds: string[], platform: Platform): Promise<Creator[]> {
     const allCreators = await DBUtils.getBatch<Creator>(
@@ -50,7 +69,68 @@ export class CreatorRepository {
   }
 
   /**
-   * 获取所有关注的创作者
+   * 获取指定平台的全部创作者
+   * 基于platform索引的查询
+   */
+  async getAllCreators(platform: Platform): Promise<Creator[]> {
+    return await DBUtils.getByIndex<Creator>(
+      STORE_NAMES.CREATORS,
+      'platform',
+      platform
+    );
+  }
+
+  /**
+   * 获取分页后的创作者数据
+   * 基于平台索引和游标的分页查询
+   */
+  async getPaginatedCreators(
+    platform: Platform,
+    params: PaginationParams = { page: 1, pageSize: 20 }
+  ): Promise<PaginationResult<Creator>> {
+    const { page = 1, pageSize = 20 } = params;
+    const offset = (page - 1) * pageSize;
+    let totalCount = 0;
+    const results: Creator[] = [];
+
+    // 使用游标遍历实现分页，避免一次性获取全部数据
+    await DBUtils.cursor<Creator>(
+      STORE_NAMES.CREATORS,
+      (value, cursor) => {
+        // 计总数
+        totalCount++;
+
+        // 跳过前面的数据
+        if (cursor.primaryKey && typeof cursor.primaryKey === 'number' && cursor.primaryKey < offset) {
+          cursor.continue();
+          return;
+        }
+
+        // 收集当前页数据
+        if (results.length < pageSize) {
+          results.push(value);
+          cursor.continue();
+        } else {
+          // 停止遍历
+          return false;
+        }
+      },
+      'platform',
+      IDBKeyRange.only(platform)
+    );
+
+    return {
+      items: results,
+      total: totalCount,
+      page,
+      pageSize,
+      totalPages: Math.ceil(totalCount / pageSize)
+    };
+  }
+
+  /**
+   * 获取已关注的创作者
+   * 基于isFollowing索引的查询
    */
   async getFollowingCreators(platform: Platform): Promise<Creator[]> {
     const allCreators = await DBUtils.getByIndex<Creator>(
@@ -58,26 +138,64 @@ export class CreatorRepository {
       'isFollowing',
       1
     );
-    return allCreators
-      .filter(c => c.platform === platform)
-      .sort((a, b) => b.followTime - a.followTime);
+    return allCreators.filter(c => c.platform === platform);
   }
 
   /**
-   * 获取指定平台的全部创作者
+   * 获取已关注的创作者(分页)
+   * 基于isFollowing索引和游标的分页查询
    */
-  async getAllCreators(platform: Platform): Promise<Creator[]> {
-    const allCreators = await DBUtils.getByIndex<Creator>(
+  async getPaginatedFollowingCreators(
+    platform: Platform,
+    params: PaginationParams = { page: 1, pageSize: 20 }
+  ): Promise<PaginationResult<Creator>> {
+    const { page = 1, pageSize = 20 } = params;
+    const offset = (page - 1) * pageSize;
+    let totalCount = 0;
+    const results: Creator[] = [];
+
+    // 使用游标遍历实现分页，避免一次性获取全部数据
+    await DBUtils.cursor<Creator>(
       STORE_NAMES.CREATORS,
-      'platform',
-      platform
+      (value, cursor) => {
+        // 只处理指定平台的已关注创作者
+        if (value.platform === platform) {
+          totalCount++;
+
+          // 跳过前面的数据
+          if (totalCount <= offset) {
+            cursor.continue();
+            return;
+          }
+
+          // 收集当前页数据
+          if (results.length < pageSize) {
+            results.push(value);
+            cursor.continue();
+          } else {
+            // 停止遍历
+            return false;
+          }
+        } else {
+          cursor.continue();
+        }
+      },
+      'isFollowing',
+      IDBKeyRange.only(1)
     );
 
-    return allCreators.sort((a, b) => b.followTime - a.followTime);
+    return {
+      items: results,
+      total: totalCount,
+      page,
+      pageSize,
+      totalPages: Math.ceil(totalCount / pageSize)
+    };
   }
 
   /**
    * 更新创作者关注状态
+   * 先查询再更新，基于主键索引
    */
   async updateFollowStatus(creatorId: string, platform: Platform, isFollowing: number): Promise<void> {
     const creator = await this.getCreator(creatorId, platform);
@@ -96,6 +214,7 @@ export class CreatorRepository {
 
   /**
    * 更新创作者标签权重
+   * 先查询再更新，基于主键索引
    */
   async updateTagWeights(
     creatorId: string,
@@ -132,62 +251,8 @@ export class CreatorRepository {
   }
 
   /**
-   * 获取创作者统计信息
-   */
-  async getCreatorStats(creatorId: string, platform: Platform): Promise<CreatorStats | null> {
-    // TODO: 实现统计计算逻辑
-    return null;
-  }
-
-  /**
-   * 获取多个创作者的统计信息
-   */
-  async getCreatorsStats(creatorIds: string[], platform: Platform): Promise<CreatorStats[]> {
-    // TODO: 实现批量统计计算逻辑
-    return [];
-  }
-
-  /**
-   * 获取创作者排名
-   */
-  async getCreatorRanking(platform: Platform, limit: number = 100): Promise<CreatorStats[]> {
-    // TODO: 实现排名计算逻辑
-    return [];
-  }
-
-  /**
-   * 搜索创作者
-   */
-  async searchCreators(
-    platform: Platform,
-    keyword: string,
-    pagination: PaginationParams
-  ): Promise<PaginationResult<Creator>> {
-    const allCreators = await DBUtils.getByIndex<Creator>(
-      STORE_NAMES.CREATORS,
-      'platform',
-      platform
-    );
-
-    const filtered = allCreators.filter(creator =>
-      creator.name.toLowerCase().includes(keyword.toLowerCase())
-    );
-
-    const start = pagination.page * pagination.pageSize;
-    const end = start + pagination.pageSize;
-    const items = filtered.slice(start, end);
-
-    return {
-      items,
-      total: filtered.length,
-      page: pagination.page,
-      pageSize: pagination.pageSize,
-      totalPages: Math.ceil(filtered.length / pagination.pageSize)
-    };
-  }
-
-  /**
    * 删除创作者
+   * 基于主键索引的删除操作
    */
   async deleteCreator(creatorId: string, platform: Platform): Promise<void> {
     await DBUtils.delete(STORE_NAMES.CREATORS, creatorId);
@@ -195,6 +260,7 @@ export class CreatorRepository {
 
   /**
    * 标记创作者为已注销
+   * 先查询再更新，基于主键索引
    */
   async markCreatorAsLogout(creatorId: string, platform: Platform): Promise<void> {
     const creator = await this.getCreator(creatorId, platform);
@@ -211,236 +277,32 @@ export class CreatorRepository {
   }
 
   /**
-   * 获取所有创作者（不区分平台）
-   */
-  async getAllCreatorsNoFilter(): Promise<Creator[]> {
-    return await DBUtils.getAll<Creator>(STORE_NAMES.CREATORS);
-  }
-
-  /**
    * 获取指定平台的创作者数量
+   * 基于platform索引的计数
    */
   async getCreatorCount(platform: Platform): Promise<number> {
-    const creators = await this.getAllCreators(platform);
-    return creators.length;
-  }
-
-  /**
-   * 批量获取创作者标签权重
-   */
-  async getCreatorsTagWeights(platform: Platform): Promise<Record<string, Creator['tagWeights']>> {
-    const creators = await this.getAllCreators(platform);
-    return Object.fromEntries(
-      creators.map(creator => [creator.creatorId, creator.tagWeights])
-    );
-  }
-
-  /**
-   * 根据关注状态获取创作者
-   */
-  async getCreatorsByFollowStatus(platform: Platform, isFollowing: boolean): Promise<Creator[]> {
-    const allCreators = await DBUtils.getByIndex<Creator>(
-      STORE_NAMES.CREATORS,
-      'isFollowing',
-      isFollowing ? 1 : 0
-    );
-    return allCreators.filter(c => c.platform === platform);
-  }
-
-  /**
-   * 按条件查询创作者
-   */
-  async searchCreatorsByFilter(
-    platform: Platform,
-    options: {
-      isFollowing?: boolean;
-      includeTags?: string[];
-      excludeTags?: string[];
-      includeCategories?: string[];
-      excludeCategories?: string[];
-      keyword?: string;
-      page?: number;
-      pageSize?: number;
-    }
-  ): Promise<Creator[]> {
-    // 获取所有符合平台的创作者
-    let creators = await DBUtils.getByIndex<Creator>(STORE_NAMES.CREATORS, 'platform', platform);
-
-    // 按关注状态过滤
-    if (options.isFollowing !== undefined) {
-      creators = creators.filter(c => c.isFollowing === (options.isFollowing ? 1 : 0));
-    }
-
-    // 按关键词搜索
-    if (options.keyword) {
-      const keyword = options.keyword.toLowerCase();
-      creators = creators.filter(c => c.name.toLowerCase().includes(keyword));
-    }
-
-    // 如果没有标签或分类过滤条件，直接返回结果
-    if (
-      (!options.includeTags || options.includeTags.length === 0) &&
-      (!options.excludeTags || options.excludeTags.length === 0) &&
-      (!options.includeCategories || options.includeCategories.length === 0) &&
-      (!options.excludeCategories || options.excludeCategories.length === 0)
-    ) {
-      // 应用分页
-      const page = options.page ?? 0;
-      const pageSize = options.pageSize ?? 100;
-      const start = page * pageSize;
-      const end = start + pageSize;
-      return creators.slice(start, end);
-    }
-
-    // 需要获取分类信息以处理分类过滤
-    const { CategoryRepository } = await import('./category-repository.impl.js');
-    const categoryRepo = new CategoryRepository();
-    const allCategories = await categoryRepo.getAllCategories();
-
-    // 构建分类到标签的映射
-    const categoryToTags = new Map<string, string[]>();
-    for (const category of allCategories) {
-      categoryToTags.set(category.id, category.tagIds);
-    }
-
-    // 过滤创作者
-    const filteredCreators = creators.filter(creator => {
-      // 提取创作者的用户标签
-      const userTags = creator.tagWeights
-        .filter(tw => tw.source === 'user')
-        .map(tw => tw.tagId);
-
-      // 检查是否包含所有必需标签
-      if (options.includeTags && options.includeTags.length > 0) {
-        const hasAllIncludeTags = options.includeTags.every(tag => userTags.includes(tag));
-        if (!hasAllIncludeTags) {
-          return false;
-        }
-      }
-
-      // 检查是否不包含排除标签
-      if (options.excludeTags && options.excludeTags.length > 0) {
-        const hasExcludeTag = options.excludeTags.some(tag => userTags.includes(tag));
-        if (hasExcludeTag) {
-          return false;
-        }
-      }
-
-      // 检查是否包含至少一个必需分类的标签
-      if (options.includeCategories && options.includeCategories.length > 0) {
-        const hasIncludeCategory = options.includeCategories.some(categoryId => {
-          const categoryTags = categoryToTags.get(categoryId) || [];
-          return categoryTags.some(tag => userTags.includes(tag));
-        });
-        if (!hasIncludeCategory) {
-          return false;
-        }
-      }
-
-      // 检查是否不包含排除分类的标签
-      if (options.excludeCategories && options.excludeCategories.length > 0) {
-        const hasExcludeCategory = options.excludeCategories.some(categoryId => {
-          const categoryTags = categoryToTags.get(categoryId) || [];
-          return categoryTags.some(tag => userTags.includes(tag));
-        });
-        if (hasExcludeCategory) {
-          return false;
-        }
-      }
-
-      return true;
-    });
-
-    // 应用分页
-    const page = options.page ?? 0;
-    const pageSize = options.pageSize ?? 100;
-    const start = page * pageSize;
-    const end = start + pageSize;
-    return filteredCreators.slice(start, end);
+    return await DBUtils.countByIndex(STORE_NAMES.CREATORS, 'platform', platform);
   }
 
   /**
    * 获取已关注创作者数量
+   * 基于isFollowing索引的计数
    */
   async getFollowedCount(platform: Platform): Promise<number> {
-    const followedCreators = await DBUtils.getByIndex<Creator>(
-      STORE_NAMES.CREATORS,
-      'isFollowing',
-      1
-    );
-    return followedCreators.filter(c => c.platform === platform).length;
+    return await DBUtils.countByIndex(STORE_NAMES.CREATORS, 'isFollowing', 1);
   }
 
   /**
    * 获取未关注创作者数量
+   * 基于isFollowing索引的计数
    */
   async getUnfollowedCount(platform: Platform): Promise<number> {
-    const unfollowedCreators = await DBUtils.getByIndex<Creator>(
-      STORE_NAMES.CREATORS,
-      'isFollowing',
-      0
-    );
-    return unfollowedCreators.filter(c => c.platform === platform).length;
-  }
-
-  /**
-   * 获取标签使用次数统计
-   */
-  async getTagUsageCounts(platform: Platform): Promise<Map<string, number>> {
-    const allCreators = await DBUtils.getByIndex<Creator>(
-      STORE_NAMES.CREATORS,
-      'platform',
-      platform
-    );
-
-    const tagCounts = new Map<string, number>();
-    for (const creator of allCreators) {
-      const userTags = creator.tagWeights
-        .filter(tw => tw.source === 'user')
-        .map(tw => tw.tagId);
-
-      for (const tagId of userTags) {
-        tagCounts.set(tagId, (tagCounts.get(tagId) ?? 0) + 1);
-      }
-    }
-
-    return tagCounts;
-  }
-
-  /**
-   * 获取创作者头像URL
-   */
-  async getAvatarUrl(creatorId: string, platform: Platform): Promise<string> {
-    const creator = await this.getCreator(creatorId, platform);
-    if (!creator) {
-      return '';
-    }
-
-    // 如果已有avatarUrl，直接返回
-    if (creator.avatarUrl) {
-      return creator.avatarUrl;
-    }
-
-    // 如果是bilibili平台且avatarUrl为空，尝试通过API获取
-    if (platform === 'bilibili') {
-      try {
-        const { getUPInfo } = await import('../../api/bili-api.js');
-        const upInfo = await getUPInfo(parseInt(creatorId, 10));
-        if (upInfo?.face) {
-          // 更新数据库中的avatarUrl
-          await this.updateAvatarUrl(creatorId, platform, upInfo.face);
-          return upInfo.face;
-        }
-      } catch (error) {
-        console.error(`[CreatorRepository] Failed to fetch avatar URL for ${creatorId}:`, error);
-      }
-    }
-
-    return '';
+    return await DBUtils.countByIndex(STORE_NAMES.CREATORS, 'isFollowing', 0);
   }
 
   /**
    * 更新创作者头像URL
+   * 先查询再更新，基于主键索引
    */
   async updateAvatarUrl(creatorId: string, platform: Platform, avatarUrl: string): Promise<void> {
     const creator = await this.getCreator(creatorId, platform);
@@ -453,6 +315,110 @@ export class CreatorRepository {
       avatarUrl
     };
 
+    await this.upsertCreator(updated);
+  }
+
+  /**
+   * 获取创作者头像二进制数据
+   * 如果本地没有头像数据，会尝试从URL下载并存储
+   */
+  async getAvatarBinary(creatorId: string, platform: Platform): Promise<Blob | null> {
+    // 先获取创作者信息
+    const creator = await this.getCreator(creatorId, platform);
+    if (!creator) {
+      return null;
+    }
+
+    // 检查本地是否有缓存的二进制数据
+    if (creator.avatar) {
+      try {
+        // 使用存储的图片ID获取完整图片数据
+        const fullImage = await this.imageRepository.getImage(creator.avatar);
+        if (fullImage) {
+          return fullImage.data.data;
+        }
+      } catch (error) {
+        console.error(`[CreatorRepository] Failed to fetch avatar binary for ${creatorId}:`, error);
+      }
+    }
+
+    // 如果没有缓存，从URL下载
+    if (creator.avatarUrl) {
+      try {
+        const response = await fetch(creator.avatarUrl);
+        if (response.ok) {
+          const blob = await response.blob();
+          
+          // 存储二进制数据
+          await this.saveAvatarBinary(creatorId, platform, blob);
+          
+          return blob;
+        }
+      } catch (error) {
+        console.error(`[CreatorRepository] Failed to fetch avatar binary for ${creatorId}:`, error);
+      }
+    }
+    
+    return null;
+  }
+
+  /**
+   * 保存创作者头像二进制数据
+   * 将二进制数据存储到images_data表中，并更新creator表的avatar字段
+   */
+  async saveAvatarBinary(creatorId: string, platform: Platform, avatarBlob: Blob): Promise<void> {
+    // 先获取创作者信息
+    const creator = await this.getCreator(creatorId, platform);
+    if (!creator) {
+      throw new Error(`Creator not found: ${creatorId}`);
+    }
+    
+    // 使用ImageRepository存储二进制数据
+    const purpose = ImagePurpose.AVATAR;
+    
+    // 存储二进制数据
+    const image = await this.imageRepository.createImage({
+      purpose,
+      data: avatarBlob
+    });
+    
+    // 更新创作者信息，将avatar设置为图片ID
+    const updated: Creator = {
+      ...creator,
+      avatar: image.metadata.id // 存储图片ID
+    };
+    
+    await this.upsertCreator(updated);
+  }
+
+  /**
+   * 删除创作者头像二进制数据
+   * 同时清除images_data表中的对应数据
+   */
+  async deleteAvatarBinary(creatorId: string, platform: Platform): Promise<void> {
+    // 先获取创作者信息
+    const creator = await this.getCreator(creatorId, platform);
+    if (!creator) {
+      throw new Error(`Creator not found: ${creatorId}`);
+    }
+    
+    // 如果有头像数据，删除它
+    if (creator.avatar) {
+      try {
+        // 删除图片
+        await this.imageRepository.deleteImage(creator.avatar);
+      } catch (error) {
+        console.error(`[CreatorRepository] Failed to delete avatar binary for ${creatorId}:`, error);
+      }
+    }
+    
+    // 更新创作者信息，将avatar重置为空
+    const updated: Creator = {
+      ...creator,
+      avatar: '',
+      avatarUrl: creator.avatarUrl // 保留URL，以便重新下载
+    };
+    
     await this.upsertCreator(updated);
   }
 }

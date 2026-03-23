@@ -14,11 +14,12 @@ export class CategoryRepository {
   /**
    * 创建分区
    */
-  async createCategory(category: Omit<Category, 'id'>): Promise<string> {
+  async createCategory(category: Omit<Category, 'id' | 'createdAt'>): Promise<string> {
     const id = `category_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
     const newCategory: Category = {
       id,
-      ...category
+      ...category,
+      createdAt: Date.now()
     };
     await DBUtils.add(STORE_NAMES.CATEGORIES, newCategory);
     return id;
@@ -27,12 +28,12 @@ export class CategoryRepository {
   /**
    * 批量创建分区
    */
-  async createCategories(categories: Omit<Category, 'id'>[]): Promise<string[]> {
+  async createCategories(categories: Omit<Category, 'id' | 'createdAt'>[]): Promise<string[]> {
     const ids: string[] = [];
     const newCategories: Category[] = categories.map(category => {
       const id = `category_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
       ids.push(id);
-      return { id, ...category };
+      return { id, ...category, createdAt: Date.now() };
     });
     await DBUtils.addBatch(STORE_NAMES.CATEGORIES, newCategories);
     return ids;
@@ -48,34 +49,25 @@ export class CategoryRepository {
   /**
    * 获取所有分区
    */
-  async getAllCategories(parentId?: string): Promise<Category[]> {
-    const allCategories = await DBUtils.getAll<Category>(STORE_NAMES.CATEGORIES);
-    if (parentId !== undefined) {
-      return allCategories.filter(cat => cat.parentId === parentId);
-    }
-    return allCategories;
+  async getAllCategories(): Promise<Category[]> {
+    return DBUtils.getAll<Category>(STORE_NAMES.CATEGORIES);
   }
 
   /**
-   * 获取分区树
+   * 分页获取分区
+   * @param page 页码，从0开始
+   * @param pageSize 每页数量
    */
-  async getCategoryTree(rootId?: string): Promise<Category[]> {
+  async getCategoriesByPage(page: number, pageSize: number): Promise<Category[]> {
     const allCategories = await this.getAllCategories();
-    const categoryMap = new Map<string, Category>();
-    allCategories.forEach(cat => categoryMap.set(cat.id, cat));
-
-    const buildTree = (parentId?: string): Category[] => {
-      return allCategories
-        .filter(cat => cat.parentId === parentId)
-        .map(cat => ({
-          ...cat,
-          // 将子节点添加到 children 属性（如果需要）
-          children: buildTree(cat.id)
-        }));
-    };
-
-    return buildTree(rootId);
+    const startIndex = page * pageSize;
+    const endIndex = startIndex + pageSize;
+    return allCategories.slice(startIndex, endIndex);
   }
+
+
+
+
 
   /**
    * 更新分区
@@ -99,28 +91,7 @@ export class CategoryRepository {
     await DBUtils.delete(STORE_NAMES.CATEGORIES, categoryId);
   }
 
-  /**
-   * 删除分区及其所有子分区
-   */
-  async deleteCategoryTree(categoryId: string): Promise<void> {
-    const allCategories = await this.getAllCategories();
-    const toDelete = [categoryId];
 
-    // 递归查找所有子分区
-    const findChildren = (parentId: string) => {
-      allCategories
-        .filter(cat => cat.parentId === parentId)
-        .forEach(cat => {
-          toDelete.push(cat.id);
-          findChildren(cat.id);
-        });
-    };
-
-    findChildren(categoryId);
-
-    // 批量删除
-    await DBUtils.deleteBatch(STORE_NAMES.CATEGORIES, toDelete);
-  }
 
   /**
    * 向分区添加标签
@@ -170,13 +141,5 @@ export class CategoryRepository {
   async isTagInCategory(categoryId: string, tagId: string): Promise<boolean> {
     const tags = await this.getCategoryTags(categoryId);
     return tags.includes(tagId);
-  }
-
-  /**
-   * 获取标签所属的所有分区
-   */
-  async getTagCategories(tagId: string): Promise<Category[]> {
-    const allCategories = await this.getAllCategories();
-    return allCategories.filter(cat => cat.tagIds.includes(tagId));
   }
 }

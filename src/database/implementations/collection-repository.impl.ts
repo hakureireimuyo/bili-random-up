@@ -1,12 +1,14 @@
 /**
  * CollectionRepository 实现
  * 职责：管理收藏夹及其收藏项的所有操作
- * 包括收藏夹的CRUD以及收藏项的添加/移除/删除，并自动维护计数器等信息
+ * 设计原则：基于IndexedDB特性，只实现高效操作
+ * - 支持基于主键和索引的增删改查
+ * - 支持分页获取数据
+ * - 避免需要全量数据的复杂查询、过滤、排序等操作
+ * - 自动维护收藏夹的计数器和时间戳
  */
 
-// 接口已移除，直接实现功能
 import { Collection, CollectionItem } from '../types/collection.js';
-import { Platform } from '../types/base.js';
 import { DBUtils, STORE_NAMES } from '../indexeddb/index.js';
 
 /**
@@ -15,6 +17,8 @@ import { DBUtils, STORE_NAMES } from '../indexeddb/index.js';
 export class CollectionRepository {
   /**
    * 创建收藏夹
+   * @param collection 收藏夹数据（不包含collectionId）
+   * @returns 创建的收藏夹ID
    */
   async createCollection(collection: Omit<Collection, 'collectionId'>): Promise<string> {
     const collectionId = `collection_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
@@ -30,6 +34,8 @@ export class CollectionRepository {
 
   /**
    * 使用指定ID创建收藏夹
+   * @param collectionId 收藏夹ID
+   * @param collection 收藏夹数据
    */
   async createCollectionWithId(collectionId: string, collection: Omit<Collection, 'collectionId'>): Promise<void> {
     const newCollection: Collection = {
@@ -42,7 +48,8 @@ export class CollectionRepository {
   }
 
   /**
-   * 获取收藏夹
+   * 根据主键获取收藏夹
+   * @param collectionId 收藏夹ID
    */
   async getCollection(collectionId: string): Promise<Collection | null> {
     return DBUtils.get<Collection>(STORE_NAMES.COLLECTIONS, collectionId);
@@ -50,18 +57,98 @@ export class CollectionRepository {
 
   /**
    * 获取所有收藏夹
+   * 注意：此方法会获取全部数据，请谨慎使用
    */
-  async getAllCollections(platform: Platform): Promise<Collection[]> {
-    const allCollections = await DBUtils.getByIndex<Collection>(
+  async getAllCollections(): Promise<Collection[]> {
+    return DBUtils.getAll<Collection>(STORE_NAMES.COLLECTIONS);
+  }
+
+  /**
+   * 获取收藏夹（分页）
+   * @param offset 偏移量
+   * @param limit 每页数量
+   */
+  async getCollectionsPaginated(offset: number, limit: number): Promise<Collection[]> {
+    const collections: Collection[] = [];
+    let skipped = 0;
+
+    await DBUtils.cursor<Collection>(
+      STORE_NAMES.COLLECTIONS,
+      (value) => {
+        if (skipped < offset) {
+          skipped++;
+          return;
+        }
+        collections.push(value);
+        return collections.length < limit;
+      }
+    );
+
+    return collections;
+  }
+
+  /**
+   * 根据名称获取收藏夹
+   * 基于name索引查询
+   * @param name 收藏夹名称
+   */
+  async getCollectionsByName(name: string): Promise<Collection[]> {
+    return DBUtils.getByIndex<Collection>(
+      STORE_NAMES.COLLECTIONS,
+      'name',
+      name
+    );
+  }
+
+  /**
+   * 根据平台获取收藏夹
+   * 基于platform索引查询
+   * @param platform 平台类型
+   */
+  async getCollectionsByPlatform(platform: string): Promise<Collection[]> {
+    return DBUtils.getByIndex<Collection>(
       STORE_NAMES.COLLECTIONS,
       'platform',
       platform
     );
-    return allCollections.sort((a, b) => b.lastUpdate - a.lastUpdate);
   }
 
   /**
+   * 根据平台获取收藏夹（分页）
+   * @param platform 平台类型
+   * @param offset 偏移量
+   * @param limit 每页数量
+   */
+  async getCollectionsByPlatformPaginated(
+    platform: string,
+    offset: number,
+    limit: number
+  ): Promise<Collection[]> {
+    const collections: Collection[] = [];
+    let skipped = 0;
+
+    await DBUtils.cursor<Collection>(
+      STORE_NAMES.COLLECTIONS,
+      (value) => {
+        if (skipped < offset) {
+          skipped++;
+          return;
+        }
+        collections.push(value);
+        return collections.length < limit;
+      },
+      'platform',
+      IDBKeyRange.only(platform)
+    );
+
+    return collections;
+  }
+
+
+  /**
    * 更新收藏夹
+   * @param collectionId 收藏夹ID
+   * @param updates 要更新的字段
    */
   async updateCollection(
     collectionId: string,
@@ -83,6 +170,7 @@ export class CollectionRepository {
 
   /**
    * 删除收藏夹及其所有收藏项
+   * @param collectionId 收藏夹ID
    */
   async deleteCollection(collectionId: string): Promise<void> {
     // 先删除收藏夹中的所有收藏项
@@ -102,25 +190,11 @@ export class CollectionRepository {
   }
 
   /**
-   * 检查收藏夹名称是否已存在
-   */
-  async collectionNameExists(
-    platform: Platform,
-    name: string,
-    excludeId?: string
-  ): Promise<boolean> {
-    const allCollections = await this.getAllCollections(platform);
-    const lowerName = name.toLowerCase();
-
-    return allCollections.some(collection =>
-      collection.collectionId !== excludeId &&
-      collection.name.toLowerCase() === lowerName
-    );
-  }
-
-  /**
    * 添加收藏项到收藏夹
    * 自动更新收藏夹的videoCount和lastAddedAt
+   * @param collectionId 收藏夹ID
+   * @param item 收藏项数据
+   * @returns 创建的收藏项ID
    */
   async addItemToCollection(
     collectionId: string,
@@ -171,6 +245,9 @@ export class CollectionRepository {
   /**
    * 批量添加收藏项到收藏夹
    * 自动更新收藏夹的videoCount和lastAddedAt
+   * @param collectionId 收藏夹ID
+   * @param items 收藏项数据列表
+   * @returns 创建的收藏项ID列表
    */
   async addItemsToCollection(
     collectionId: string,
@@ -227,6 +304,8 @@ export class CollectionRepository {
   /**
    * 从收藏夹中移除收藏项
    * 自动更新收藏夹的videoCount
+   * @param collectionId 收藏夹ID
+   * @param itemId 收藏项ID
    */
   async removeItemFromCollection(
     collectionId: string,
@@ -261,6 +340,8 @@ export class CollectionRepository {
   /**
    * 批量从收藏夹中移除收藏项
    * 自动更新收藏夹的videoCount
+   * @param collectionId 收藏夹ID
+   * @param itemIds 收藏项ID列表
    */
   async removeItemsFromCollection(
     collectionId: string,
@@ -302,6 +383,8 @@ export class CollectionRepository {
   /**
    * 从收藏夹中删除视频（通过videoId）
    * 自动更新收藏夹的videoCount
+   * @param collectionId 收藏夹ID
+   * @param videoId 视频ID
    */
   async removeVideoFromCollection(
     collectionId: string,
@@ -337,6 +420,9 @@ export class CollectionRepository {
 
   /**
    * 获取收藏夹中的所有收藏项
+   * 基于collectionId索引查询
+   * @param collectionId 收藏夹ID
+   * @returns 收藏项列表
    */
   async getCollectionItems(collectionId: string): Promise<CollectionItem[]> {
     return DBUtils.getByIndex<CollectionItem>(
@@ -347,7 +433,44 @@ export class CollectionRepository {
   }
 
   /**
+   * 获取收藏夹中的收藏项（分页）
+   * 基于collectionId索引查询
+   * @param collectionId 收藏夹ID
+   * @param offset 偏移量
+   * @param limit 每页数量
+   * @returns 收藏项列表
+   */
+  async getCollectionItemsPaginated(
+    collectionId: string,
+    offset: number,
+    limit: number
+  ): Promise<CollectionItem[]> {
+    const items: CollectionItem[] = [];
+    let skipped = 0;
+
+    await DBUtils.cursor<CollectionItem>(
+      STORE_NAMES.COLLECTION_ITEMS,
+      (value) => {
+        if (skipped < offset) {
+          skipped++;
+          return;
+        }
+        items.push(value);
+        return items.length < limit;
+      },
+      'collectionId',
+      IDBKeyRange.only(collectionId)
+    );
+
+    return items;
+  }
+
+  /**
    * 检查视频是否已在收藏夹中
+   * 基于collectionId索引查询后过滤
+   * @param collectionId 收藏夹ID
+   * @param videoId 视频ID
+   * @returns 是否存在
    */
   async hasVideoInCollection(
     collectionId: string,
@@ -365,6 +488,7 @@ export class CollectionRepository {
   /**
    * 清空收藏夹（删除所有收藏项）
    * 自动更新收藏夹的videoCount
+   * @param collectionId 收藏夹ID
    */
   async clearCollection(collectionId: string): Promise<void> {
     // 检查收藏夹是否存在
