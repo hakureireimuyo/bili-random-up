@@ -19,7 +19,7 @@ import { apiRequest, type ApiRequestOptions } from "./request.js";
  * @returns 包含当前页UP列表和是否有下一页的对象
  */
 export async function getFollowedUPs(
-  uid: number,
+  uid: string,
   page: number = 1,
   pageSize: number = 50,
   options: ApiRequestOptions = {}
@@ -51,7 +51,7 @@ export async function getFollowedUPs(
  * Fetch videos of a specific UP.
  */
 export async function getUPVideos(
-  mid: number,
+  mid: string,
   options: ApiRequestOptions = {}
 ): Promise<VideoInfo[]> {
   const url = `https://api.bilibili.com/x/space/arc/search?mid=${mid}&pn=1&ps=30&order=pubdate`;
@@ -85,7 +85,7 @@ export async function getUPVideos(
  * @param options API请求选项
  */
 export async function getUPInfo(
-  mid: number,
+  mid: string,
   options: ApiRequestOptions = {}
 ): Promise<UpDetailInfo | null> {
   const url = `https://api.bilibili.com/x/space/acc/info?mid=${mid}`;
@@ -99,7 +99,7 @@ export async function getUPInfo(
  * @param options API请求选项
  */
 export async function getFollowStat(
-  vmid: number,
+  vmid: string,
   options: ApiRequestOptions = {}
 ): Promise<UserStatInfo | null> {
   const url = `https://api.bilibili.com/x/relation/stat?vmid=${vmid}`;

@@ -3,7 +3,6 @@
  * 实现标签分区相关的数据库操作
  */
 
-// 接口已移除，直接实现功能
 import { Category } from '../types/semantic.js';
 import { DBUtils, STORE_NAMES } from '../indexeddb/index.js';
 
@@ -64,11 +63,6 @@ export class CategoryRepository {
     const endIndex = startIndex + pageSize;
     return allCategories.slice(startIndex, endIndex);
   }
-
-
-
-
-
   /**
    * 更新分区
    */
@@ -90,8 +84,6 @@ export class CategoryRepository {
   async deleteCategory(categoryId: string): Promise<void> {
     await DBUtils.delete(STORE_NAMES.CATEGORIES, categoryId);
   }
-
-
 
   /**
    * 向分区添加标签

@@ -88,11 +88,6 @@ export interface Creator {
    */
   tagWeights: CreatorTagWeight[];
   /**
-   * 分类列表
-   * 记录当前创作者所属的分类
-   */
-  categories?: ID[];
-  /**
    * 更新时间
    */
   updatedAt?: Timestamp;

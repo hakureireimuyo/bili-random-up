@@ -151,7 +151,11 @@ function setupUpTagDropZone(tagsEl: HTMLElement, creatorId: string, state: Stats
     if (currentDrag) {
       currentDrag.dropped = true;
     }
-    void addTagToUp(creatorId, tagName, rerender);
+
+    // 使用局部刷新函数替代整个列表的重新渲染
+    void addTagToUp(creatorId, tagName, async () => {
+      await refreshUpTags(tagsEl, creatorId, state, rerender);
+    });
   });
 }
 
@@ -175,9 +179,36 @@ async function renderUpTagPill(tagId: string, creatorId: string, state: StatsSta
   return renderTagPill(tagData, {
     creatorId,
     onRemove: async (cid, tagName) => {
-      await removeTagFromUp(cid, tagId, rerender);
+      const tagsEl = document.querySelector(`[data-creator-id="${cid}"] .up-tags`) as HTMLElement;
+      if (tagsEl) {
+        await removeTagFromUp(cid, tagId, async () => {
+          await refreshUpTags(tagsEl, cid, state, rerender);
+        });
+      }
     }
   });
+}
+
+/**
+ * 局部刷新UP主的标签区域
+ */
+async function refreshUpTags(tagsEl: HTMLElement, creatorId: string, state: StatsState, rerender: RenderFn): Promise<void> {
+  const creator = creatorRepository.getCreator(creatorId);
+  const tagIds = creator?.tagWeights.map(tw => tw.tagId) || [];
+
+  // 清空容器内容，而不是直接设置textContent，以保留事件监听器
+  tagsEl.innerHTML = "";
+
+  if (tagIds.length === 0) {
+    const emptyText = document.createElement("span");
+    emptyText.textContent = "暂无分类";
+    tagsEl.appendChild(emptyText);
+  } else {
+    for (const tagId of tagIds) {
+      const pill = await renderUpTagPill(tagId, creatorId, state, rerender);
+      tagsEl.appendChild(pill);
+    }
+  }
 }
 
 export function refreshUpList(state: StatsState, rerender: RenderFn): void {

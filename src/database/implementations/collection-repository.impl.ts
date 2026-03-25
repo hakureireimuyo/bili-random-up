@@ -466,6 +466,25 @@ export class CollectionRepository {
   }
 
   /**
+   * 获取收藏夹中特定视频的收藏项
+   * 基于collectionId索引查询后过滤
+   * @param collectionId 收藏夹ID
+   * @param videoId 视频ID
+   * @returns 收藏项，如果不存在则返回null
+   */
+  async getItemByCollectionAndVideo(
+    collectionId: string,
+    videoId: string
+  ): Promise<CollectionItem | null> {
+    const items = await DBUtils.getByIndex<CollectionItem>(
+      STORE_NAMES.COLLECTION_ITEMS,
+      'collectionId',
+      collectionId
+    );
+    return items.find(item => item.videoId === videoId) || null;
+  }
+
+  /**
    * 检查视频是否已在收藏夹中
    * 基于collectionId索引查询后过滤
    * @param collectionId 收藏夹ID

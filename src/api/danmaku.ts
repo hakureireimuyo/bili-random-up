@@ -15,7 +15,7 @@ export interface Danmaku {
  * @param options API请求选项
  */
 export async function getDanmakuList(
-  cid: number,
+  cid: string,
   options: ApiRequestOptions = {}
 ): Promise<Danmaku[]> {
   const url = `https://api.bilibili.com/x/v1/dm/list.so?oid=${cid}`;

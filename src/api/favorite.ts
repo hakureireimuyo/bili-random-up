@@ -16,12 +16,13 @@ import { apiRequest, type ApiRequestOptions } from "./request.js";
  * @param options API请求选项
  */
 export async function getFavoriteFolders(
-  up_mid: number,
+  up_mid: string,
   options: ApiRequestOptions = {}
 ): Promise<FavoriteFolderInfo[]> {
   const url = `https://api.bilibili.com/x/v3/fav/folder/created/list-all?up_mid=${up_mid}`;
   const data = await apiRequest<{ count: number; list: FavoriteFolderInfo[] }>(url, options);
-  return data?.list ?? [];
+  const folders = data?.list ?? [];
+  return folders;
 }
 
 /**
@@ -30,7 +31,7 @@ export async function getFavoriteFolders(
  * @param options API请求选项
  */
 export async function getCollectedFolders(
-  up_mid: number,
+  up_mid: string,
   options: ApiRequestOptions = {}
 ): Promise<SubscribedFavoriteFolderInfo[]> {
   const allFolders: SubscribedFavoriteFolderInfo[] = [];
@@ -45,9 +46,6 @@ export async function getCollectedFolders(
     if (folders.length === 0) {
       break;
     }
-
-    allFolders.push(...folders);
-
     // 如果获取的数量小于页大小，说明已经没有更多数据
     if (folders.length < pageSize) {
       break;
@@ -66,7 +64,7 @@ export async function getCollectedFolders(
  * @returns 所有收藏夹的视频列表
  */
 export async function getAllFavoriteVideos(
-  up_mid: number,
+  up_mid: string,
   options: ApiRequestOptions = {}
 ): Promise<FavoriteVideoInfo[]> {
   // 获取所有收藏夹
@@ -79,7 +77,7 @@ export async function getAllFavoriteVideos(
     const pageSize = 20;
 
     while (true) {
-      const videos = await getFavoriteVideos(folder.id, page, pageSize, options);
+      const videos = await getFavoriteVideos(String(folder.id), page, pageSize, options);
       if (videos.length === 0) {
         break;
       }
@@ -104,7 +102,7 @@ export async function getAllFavoriteVideos(
  * @param options API请求选项
  */
 export async function getFavoriteVideos(
-  media_id: number,
+  media_id: string,
   pn = 1,
   ps = 20,
   options: ApiRequestOptions = {}
@@ -139,7 +137,7 @@ export async function getFavoriteVideos(
  * @param options API请求选项
  */
 export async function getSeasonVideos(
-  season_id: number,
+  season_id: string,
   pn = 1,
   ps = 20,
   options: ApiRequestOptions = {}
@@ -153,6 +151,46 @@ export async function getSeasonVideos(
   // 订阅合集API返回的数据中没有 intro 字段，需要添加默认值
   // 将原始数据映射到 SubscribedFavoriteVideoInfo 结构
   return videos.map((item) => ({
+    id: item.id,
+    title: item.title,
+    cover: item.cover,
+    duration: item.duration,
+    pubtime: item.pubtime,
+    bvid: item.bvid,
+    upper: {
+      mid: item.upper?.mid,
+      name: item.upper?.name
+    },
+    cnt_info: {
+      collect: item.cnt_info?.collect || 0,
+      play: item.cnt_info?.play || 0,
+      danmaku: item.cnt_info?.danmaku || 0
+    }
+  }));
+}
+
+/**
+ * 获取订阅收藏夹视频
+ * @param media_id 收藏夹ID
+ * @param pn 页码
+ * @param ps 每页数量
+ * @param options API请求选项
+ */
+export async function getCollectedVideos(
+  media_id: string,
+  pn = 1,
+  ps = 20,
+  options: ApiRequestOptions = {}
+): Promise<SubscribedFavoriteVideoInfo[]> {
+  const url = `https://api.bilibili.com/x/v3/fav/resource/list?media_id=${media_id}&pn=${pn}&ps=${ps}`;
+  const data = await apiRequest<{ data?: { medias?: any[] } }>(url, options);
+  const medias = data?.data?.medias;
+  if (!Array.isArray(medias)) {
+    return [];
+  }
+
+  // 将原始数据映射到 SubscribedFavoriteVideoInfo 结构
+  return medias.map((item) => ({
     id: item.id,
     title: item.title,
     cover: item.cover,

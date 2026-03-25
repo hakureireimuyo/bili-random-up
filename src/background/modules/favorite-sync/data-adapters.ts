@@ -1,232 +1,222 @@
 /**
- * 数据访问适配器
- * 负责适配API数据源
+ * 收藏同步模块数据适配器
+ * 负责 B 站 API 调用和请求节流管理
  */
 
-import type { CollectedFolder } from "../../../api/bili-api.js";
-import type {
-  CollectedFavoriteFolder,
-  FavoriteFolder,
-  FavoriteTag,
-  FavoriteVideoApiDetail,
-  FavoriteVideoEntry,
-  IFavoriteDataSource,
-  IVideoDataSource
-} from "./types.js";
+import type { 
+  FavoriteFolderInfo, 
+  SubscribedFavoriteFolderInfo, 
+  FavoriteVideoInfo, 
+  SubscribedFavoriteVideoInfo 
+} from "../../../api/types.js";
+import { 
+  getFavoriteFolders, 
+  getCollectedFolders, 
+  getFavoriteVideos, 
+  getSeasonVideos, 
+  getCollectedVideos,
+} from "../../../api/favorite.js";
+import { getVideoTagsDetail as getVideoTagsDetailFromVideoAPI } from "../../../api/video.js";
+import { apiRequest, type ApiRequestOptions } from "../../../api/request.js";
 
-class RequestThrottler {
+/**
+ * 请求节流器
+ * 用于控制 API 请求频率，避免触发风控
+ */
+export class RequestThrottler {
   private lastRequestTime = 0;
-  private pendingPromise: Promise<void> | null = null;
+  private minInterval: number;
 
-  constructor(private readonly requestInterval: number) {}
+  /**
+   * 创建请求节流器
+   * @param minInterval 最小请求间隔（毫秒）
+   */
+  constructor(minInterval: number = 2500) {
+    this.minInterval = minInterval;
+  }
 
-  async wait(): Promise<void> {
-    if (this.requestInterval <= 0) {
-      return;
+  /**
+   * 执行节流后的请求
+   * @param requestFn 请求函数
+   * @param options 请求选项
+   * @returns 请求结果
+   */
+  async throttle<T>(requestFn: () => Promise<T>, options?: ApiRequestOptions): Promise<T> {
+    const now = Date.now();
+    const elapsed = now - this.lastRequestTime;
+
+    // 如果距离上次请求的时间小于最小间隔，则等待
+    if (elapsed < this.minInterval) {
+      const waitTime = this.minInterval - elapsed;
+      await new Promise(resolve => setTimeout(resolve, waitTime));
     }
 
-    // 如果已经有等待中的请求，直接复用
-    if (this.pendingPromise) {
-      return this.pendingPromise;
+    try {
+      const result = await requestFn();
+      this.lastRequestTime = Date.now();
+      return result;
+    } catch (error) {
+      // 发生错误时也更新请求时间，避免重试过快
+      this.lastRequestTime = Date.now();
+      throw error;
     }
+  }
 
-    const elapsed = Date.now() - this.lastRequestTime;
-    if (elapsed < this.requestInterval) {
-      this.pendingPromise = new Promise(resolve => {
-        setTimeout(() => {
-          this.lastRequestTime = Date.now();
-          this.pendingPromise = null;
-          resolve();
-        }, this.requestInterval - elapsed);
-      });
-      return this.pendingPromise;
-    }
-
-    this.lastRequestTime = Date.now();
+  /**
+   * 设置最小请求间隔
+   * @param interval 间隔时间（毫秒）
+   */
+  setInterval(interval: number): void {
+    this.minInterval = interval;
   }
 }
 
 /**
- * B站API视频数据源适配器
+ * B 站收藏夹数据源
+ * 封装了获取收藏夹相关数据的操作
  */
-export class BiliApiVideoDataSource implements IVideoDataSource {
-  private readonly throttler: RequestThrottler;
+export class BiliApiFavoriteDataSource {
+  private throttler: RequestThrottler;
 
-  constructor(
-    private readonly getVideoDetailFn: (bvid: string) => Promise<FavoriteVideoApiDetail | null>,
-    private readonly getVideoTagsFn: (bvid: string) => Promise<FavoriteTag[]>,
-    requestInterval = 2500
-  ) {
+  /**
+   * 创建数据源
+   * @param requestInterval 请求间隔（毫秒）
+   */
+  constructor(requestInterval: number = 2500) {
     this.throttler = new RequestThrottler(requestInterval);
   }
 
-  async getVideoDetail(bvid: string): Promise<FavoriteVideoApiDetail | null> {
-    try {
-      await this.throttler.wait();
-      return await this.getVideoDetailFn(bvid);
-    } catch (error) {
-      console.error(`[BiliApiVideoDataSource] Failed to get video detail for ${bvid}:`, error);
-      return null;
-    }
+  /**
+   * 获取用户收藏夹列表
+   * @param upMid 用户ID
+   * @returns 收藏夹列表
+   */
+  async getUserFavoriteFolders(upMid: string): Promise<FavoriteFolderInfo[]> {
+    return this.throttler.throttle(() => getFavoriteFolders(upMid));
   }
 
-  async getVideoTags(bvid: string): Promise<FavoriteTag[]> {
-    try {
-      await this.throttler.wait();
-      return await this.getVideoTagsFn(bvid);
-    } catch (error) {
-      console.error(`[BiliApiVideoDataSource] Failed to get video tags for ${bvid}:`, error);
-      return [];
-    }
+  /**
+   * 获取用户订阅的收藏夹列表
+   * @param upMid 用户ID
+   * @returns 订阅收藏夹列表
+   */
+  async getSubscribedFavoriteFolders(upMid: string): Promise<SubscribedFavoriteFolderInfo[]> {
+    return this.throttler.throttle(() => getCollectedFolders(upMid));
+  }
+
+  /**
+   * 获取收藏夹中的视频
+   * @param mediaId 收藏夹ID
+   * @param page 页码
+   * @param pageSize 每页数量
+   * @returns 视频列表
+   */
+  async getFavoriteVideos(
+    mediaId: string, 
+    page: number = 1, 
+    pageSize: number = 20
+  ): Promise<FavoriteVideoInfo[]> {
+    return this.throttler.throttle(() => getFavoriteVideos(mediaId, page, pageSize));
+  }
+
+  /**
+   * 获取订阅收藏夹中的视频
+   * @param mediaId 收藏夹ID
+   * @param page 页码
+   * @param pageSize 每页数量
+   * @returns 视频列表
+   */
+  async getSubscribedFavoriteVideos(
+    mediaId: string, 
+    page: number = 1, 
+    pageSize: number = 20
+  ): Promise<SubscribedFavoriteVideoInfo[]> {
+    return this.throttler.throttle(() => getCollectedVideos(mediaId, page, pageSize));
+  }
+
+  /**
+   * 获取订阅合集中的视频
+   * @param seasonId 合集ID
+   * @param page 页码
+   * @param pageSize 每页数量
+   * @returns 视频列表
+   */
+  async getSeasonVideos(
+    seasonId: string, 
+    page: number = 1, 
+    pageSize: number = 20
+  ): Promise<SubscribedFavoriteVideoInfo[]> {
+    return this.throttler.throttle(() => getSeasonVideos(seasonId, page, pageSize));
   }
 }
 
 /**
- * B站API收藏数据源适配器
+ * B 站视频数据源
+ * 封装了获取视频相关数据的操作
  */
-export class BiliApiFavoriteDataSource implements IFavoriteDataSource {
-  private readonly throttler: RequestThrottler;
+export class BiliApiVideoDataSource {
+  private throttler: RequestThrottler;
 
-  constructor(
-    private readonly getAllFavoriteVideosFn: (upMid: number) => Promise<FavoriteVideoEntry[]>,
-    private readonly getFavoriteFoldersFn?: (upMid: number) => Promise<FavoriteFolder[]>,
-    private readonly getFavoriteVideosFn?: (
-      mediaId: number,
-      page: number,
-      pageSize: number
-    ) => Promise<FavoriteVideoEntry[]>,
-    private readonly getCollectedFoldersFn?: (upMid: number) => Promise<CollectedFolder[]>,
-    private readonly getCollectedVideosFn?: (
-      mediaId: number,
-      page: number,
-      pageSize: number
-    ) => Promise<FavoriteVideoEntry[]>,
-    private readonly getSeasonVideosFn?: (
-      seasonId: number,
-      page: number,
-      pageSize: number
-    ) => Promise<FavoriteVideoEntry[]>,
-    requestInterval = 2500
-  ) {
+  /**
+   * 创建数据源
+   * @param requestInterval 请求间隔（毫秒）
+   */
+  constructor(requestInterval: number = 2500) {
     this.throttler = new RequestThrottler(requestInterval);
   }
 
-  async getAllFavoriteVideos(
-    upMid: number,
-    shouldStop?: () => Promise<boolean>
-  ): Promise<FavoriteVideoEntry[]> {
-    const folders = await this.getFavoriteFolders(upMid);
-    const allVideos: FavoriteVideoEntry[] = [];
-    const pageSize = 20;
-
-    for (const folder of folders) {
-      let page = 1;
-
-      while (true) {
-        if (shouldStop && (await shouldStop())) {
-          return allVideos;
-        }
-
-        const videos = await this.getFavoriteVideos(folder.id, page, pageSize);
-        if (videos.length === 0) {
-          break;
-        }
-
-        allVideos.push(
-          ...videos.map(video => ({
-            bvid: video.bvid,
-            intro: String(folder.id)
-          }))
-        );
-
-        if (videos.length < pageSize) {
-          break;
-        }
-
-        page += 1;
-      }
-    }
-
-    return allVideos;
+  /**
+   * 获取视频详情
+   * @param bvid 视频ID
+   * @returns 视频详情
+   */
+  async getVideoDetail(bvid: string): Promise<any> {
+    return this.throttler.throttle(() => getVideoDetail(bvid));
   }
 
-  async getFavoriteFolders(upMid: number): Promise<FavoriteFolder[]> {
-    if (!this.getFavoriteFoldersFn) {
-      throw new Error("getFavoriteFoldersFn not provided");
-    }
-
-    try {
-      await this.throttler.wait();
-      return await this.getFavoriteFoldersFn(upMid);
-    } catch (error) {
-      console.error(`[BiliApiFavoriteDataSource] Failed to get favorite folders for user ${upMid}:`, error);
-      return [];
-    }
+  /**
+   * 获取视频标签
+   * @param bvid 视频ID
+   * @returns 视频标签列表
+   */
+  async getVideoTags(bvid: string): Promise<any[]> {
+    return this.throttler.throttle(() => getVideoTagsDetail(bvid));
   }
 
-  async getFavoriteVideos(mediaId: number, page: number, pageSize: number): Promise<FavoriteVideoEntry[]> {
-    if (!this.getFavoriteVideosFn) {
-      throw new Error("getFavoriteVideosFn not provided");
-    }
+  /**
+   * 获取视频标签（从视频API）
+   * @param bvid 视频ID
+   * @returns 视频标签列表
+   */
+  async getVideoTagsFromVideoAPI(bvid: string): Promise<any[]> {
+    return this.throttler.throttle(() => getVideoTagsDetailFromVideoAPI(bvid));
+  }
+}
 
-    try {
-      await this.throttler.wait();
-      return await this.getFavoriteVideosFn(mediaId, page, pageSize);
-    } catch (error) {
-      console.error(`[BiliApiFavoriteDataSource] Failed to get videos for folder ${mediaId} page ${page}:`, error);
-      return [];
-    }
+/**
+ * B 站用户数据源
+ * 封装了获取用户相关数据的操作
+ */
+export class BiliApiUserDataSource {
+  private throttler: RequestThrottler;
+
+  /**
+   * 创建数据源
+   * @param requestInterval 请求间隔（毫秒）
+   */
+  constructor(requestInterval: number = 2500) {
+    this.throttler = new RequestThrottler(requestInterval);
   }
 
-  async getCollectedFolders(upMid: number): Promise<CollectedFavoriteFolder[]> {
-    if (!this.getCollectedFoldersFn) {
-      throw new Error("getCollectedFoldersFn not provided");
-    }
-
-    try {
-      await this.throttler.wait();
-      const collectedFolders = await this.getCollectedFoldersFn(upMid);
-
-      return collectedFolders.map(folder => ({
-        id: folder.id,
-        title: folder.title,
-        media_count: folder.media_count,
-        upper: {
-          mid: folder.upper.mid,
-          name: folder.upper.name
-        }
-      }));
-    } catch (error) {
-      console.error(`[BiliApiFavoriteDataSource] Failed to get collected folders for user ${upMid}:`, error);
-      return [];
-    }
-  }
-
-  async getCollectedVideos(mediaId: number, page: number, pageSize: number): Promise<FavoriteVideoEntry[]> {
-    if (!this.getCollectedVideosFn) {
-      throw new Error("getCollectedVideosFn not provided");
-    }
-
-    try {
-      await this.throttler.wait();
-      return await this.getCollectedVideosFn(mediaId, page, pageSize);
-    } catch (error) {
-      console.error(`[BiliApiFavoriteDataSource] Failed to get collected videos for folder ${mediaId} page ${page}:`, error);
-      return [];
-    }
-  }
-
-  async getSeasonVideos(seasonId: number, page: number, pageSize: number): Promise<FavoriteVideoEntry[]> {
-    if (!this.getSeasonVideosFn) {
-      throw new Error("getSeasonVideosFn not provided");
-    }
-
-    try {
-      await this.throttler.wait();
-      return await this.getSeasonVideosFn(seasonId, page, pageSize);
-    } catch (error) {
-      console.error(`[BiliApiFavoriteDataSource] Failed to get season videos for season ${seasonId} page ${page}:`, error);
-      return [];
-    }
+  /**
+   * 获取用户信息
+   * @param mid 用户ID
+   * @returns 用户信息
+   */
+  async getUserInfo(mid: string): Promise<any> {
+    return this.throttler.throttle(() => {
+      const url = `https://api.bilibili.com/x/space/acc/info?mid=${mid}`;
+      return apiRequest(url);
+    });
   }
 }

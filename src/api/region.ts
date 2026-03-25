@@ -13,7 +13,7 @@ import { apiRequest, type ApiRequestOptions } from "./request.js";
  * @param options API请求选项
  */
 export async function getRegionVideos(
-  rid: number,
+  rid: string,
   pn = 1,
   ps = 20,
   options: ApiRequestOptions = {}
@@ -47,7 +47,7 @@ export async function getRegionVideos(
  * @param options API请求选项
  */
 export async function getRanking(
-  rid = 0,
+  rid = "0",
   day = 3,
   options: ApiRequestOptions = {}
 ): Promise<VideoInfo[]> {

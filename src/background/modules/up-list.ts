@@ -50,7 +50,7 @@ export async function updateUpListTask(
       }
 
       // 判断是否为增量更新：当前批次中至少10个已关注的UP
-      const existingInBatch = result.upList.filter(up => existingCreatorSet.has(up.mid)).length;
+      const existingInBatch = result.upList.filter(up => existingCreatorSet.has(String(up.mid))).length;
       if (existingInBatch >= existingInBatchThreshold && page > 1) {
         console.log(`[Background] Page ${page}: Detected incremental update (${existingInBatch} existing UPs in batch, threshold=${existingInBatchThreshold})`);
         break;
@@ -58,7 +58,7 @@ export async function updateUpListTask(
 
       // 将 FollowingUp 转换为 Creator
       const creators: Creator[] = result.upList.map(up => ({
-        creatorId: up.mid,
+        creatorId: String(up.mid),
         platform: Platform.BILIBILI,
         name: up.uname,
         avatar: '',

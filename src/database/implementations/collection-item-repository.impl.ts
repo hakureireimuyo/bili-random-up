@@ -3,8 +3,6 @@
  * 职责：仅管理收藏项自身数据，不涉及收藏夹的任何操作
  * 设计原则：基于IndexedDB特性，只实现高效操作
  * - 支持基于主键和索引的增删改查
- * - 支持分页获取数据
- * - 避免需要全量数据的复杂查询、过滤、排序等操作
  */
 
 import { CollectionItem } from '../types/collection.js';
@@ -26,51 +24,6 @@ export class CollectionItemRepository {
   }
 
   /**
-   * 获取指定收藏夹的所有收藏项
-   * 基于collectionId索引查询
-   * @param collectionId 收藏夹ID
-   */
-  async getItemsByCollection(collectionId: string): Promise<CollectionItem[]> {
-    return DBUtils.getByIndex<CollectionItem>(
-      STORE_NAMES.COLLECTION_ITEMS,
-      'collectionId',
-      collectionId
-    );
-  }
-
-  /**
-   * 获取指定收藏夹的收藏项（分页）
-   * 基于collectionId索引查询
-   * @param collectionId 收藏夹ID
-   * @param offset 偏移量
-   * @param limit 每页数量
-   */
-  async getItemsByCollectionPaginated(
-    collectionId: string,
-    offset: number,
-    limit: number
-  ): Promise<CollectionItem[]> {
-    const items: CollectionItem[] = [];
-    let skipped = 0;
-
-    await DBUtils.cursor<CollectionItem>(
-      STORE_NAMES.COLLECTION_ITEMS,
-      (value) => {
-        if (skipped < offset) {
-          skipped++;
-          return;
-        }
-        items.push(value);
-        return items.length < limit;
-      },
-      'collectionId',
-      IDBKeyRange.only(collectionId)
-    );
-
-    return items;
-  }
-
-  /**
    * 获取指定视频的所有收藏项
    * 基于videoId索引查询
    * @param videoId 视频ID
@@ -82,25 +35,6 @@ export class CollectionItemRepository {
       videoId
     );
   }
-
-  /**
-   * 根据收藏夹和视频ID获取收藏项
-   * 基于collectionId索引查询后过滤
-   * @param collectionId 收藏夹ID
-   * @param videoId 视频ID
-   */
-  async getItemByCollectionAndVideo(
-    collectionId: string,
-    videoId: string
-  ): Promise<CollectionItem | null> {
-    const items = await DBUtils.getByIndex<CollectionItem>(
-      STORE_NAMES.COLLECTION_ITEMS,
-      'collectionId',
-      collectionId
-    );
-    return items.find(item => item.videoId === videoId) || null;
-  }
-
   /**
    * 创建收藏项
    * @param item 收藏项数据（不包含itemId、collectionId、addedAt）
@@ -189,17 +123,7 @@ export class CollectionItemRepository {
     await DBUtils.deleteBatch(STORE_NAMES.COLLECTION_ITEMS, itemIds);
   }
 
-  /**
-   * 删除指定收藏夹的所有收藏项
-   * @param collectionId 收藏夹ID
-   */
-  async deleteItemsByCollection(collectionId: string): Promise<void> {
-    const items = await this.getItemsByCollection(collectionId);
-    if (items.length === 0) return;
 
-    const itemIds = items.map(item => item.itemId);
-    await DBUtils.deleteBatch(STORE_NAMES.COLLECTION_ITEMS, itemIds);
-  }
 
   /**
    * 获取收藏项的视频ID

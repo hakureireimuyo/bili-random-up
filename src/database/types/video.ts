@@ -54,7 +54,7 @@ export interface Video {
   coverUrl?: string;
   /**
    * 视频封面图片
-   * 存储图片信息（base64格式），不存储URL
+   * 存储图片信息,存储一个image的id,不记录图像的实际数据
    */
   picture?: string;
 

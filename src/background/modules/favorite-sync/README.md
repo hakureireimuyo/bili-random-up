@@ -8,7 +8,7 @@
 - 为每个远端收藏夹创建或复用本地收藏夹
 - 增量识别尚未入库的视频
 - 拉取视频详情与标签，并补齐创作者、标签、视频数据
-- 对失效视频写入兜底记录，避免同步中断
+- 对失效视频写入兜底记录，避免同步中断和避免数量无法对齐
 - 提供基于本地收藏夹的数据搜索能力
 
 ## 当前结构
@@ -25,14 +25,12 @@
 1. 依赖注入：服务本身不直接 new 具体实现，便于替换数据源和仓储。
 2. 单一职责：适配器只负责“节流 + 转发 + 轻量转换”，服务只负责业务流程。
 3. 类型收敛：核心链路已用明确领域类型替换 `any`，减少隐式约定。
-4. 渐进式增量同步：优先判断本地与远端数量差，再按分页抓取新增视频。
+4. 渐进式增量同步：优先判断本地与远端数量差，再按分页抓取最新的视频数据,当大部分数据开始重复的时候意味着需要停止了。
 5. 容错优先：单个视频失败不会中断整次同步，失败项会记录到结果中。
 
 ## 同步流程
 
 ### 多收藏夹模式
-
-当 `createMultipleCollections = true` 时：
 
 1. 拉取用户自己的收藏夹列表。
 2. 拉取用户订阅的合集列表。
@@ -41,14 +39,6 @@
 5. 仅在远端数量大于本地数量时继续抓取。
 6. 按分页拉取远端视频，并过滤本地已存在的视频。
 7. 按批次补齐视频详情、标签、创作者，再写入收藏夹。
-
-### 默认收藏夹模式
-
-当 `createMultipleCollections = false` 时：
-
-1. 创建或复用默认收藏夹。
-2. 拉取所有收藏视频。
-3. 按批次处理并入库。
 
 ## 分页抓取策略
 
@@ -61,18 +51,9 @@
 
 这套策略的目标是降低中断后重启任务的请求量，同时尽量保留“最新收藏优先同步”的行为。
 
-## 类型设计
-
-模块内部新增并统一使用了以下领域类型：
-
-- `FavoriteVideoEntry`：收藏列表中的轻量视频项
-- `FavoriteTag`：视频标签
-- `FavoriteFolder`：普通收藏夹
-- `CollectedFavoriteFolder`：订阅合集
-- `FavoriteVideoApiDetail`：视频详情响应
-- `IFavoriteSyncDependencies`：服务依赖边界
-
-仓储依赖没有直接暴露完整实现，而是通过 `*RepositoryLike` 接口约束模块真正需要的最小能力，降低耦合。
+## 数据类型
+优先使用bili-api定义的数据结构和src\database\types中的数据结构完成一切操作
+该功能专属的特殊需求可以定义新的数据结构
 
 ## 请求节流
 
@@ -107,61 +88,5 @@
 | `createMultipleCollections` | `boolean` | `true` | 是否按远端收藏夹拆分本地收藏夹 |
 | `requestInterval` | `number` | `2500` | API 请求间隔，单位毫秒 |
 
-## 使用示例
-
-```ts
-import {
-  FavoriteSyncService,
-  BiliApiFavoriteDataSource,
-  BiliApiVideoDataSource
-} from "./favorite-sync/index.js";
-import {
-  getAllFavoriteVideos,
-  getCollectedFolders,
-  getFavoriteFolders,
-  getFavoriteVideos,
-  getSeasonVideos,
-  getVideoDetail,
-  getVideoTagsDetail
-} from "../../api/bili-api.js";
-import { VideoRepository } from "../../database/implementations/video-repository.impl.js";
-import { CollectionRepository } from "../../database/implementations/collection-repository.impl.js";
-import { CollectionItemRepository } from "../../database/implementations/collection-item-repository.impl.js";
-import { CreatorRepository } from "../../database/implementations/creator-repository.impl.js";
-import { TagRepository } from "../../database/implementations/tag-repository.impl.js";
-
-const videoDataSource = new BiliApiVideoDataSource(getVideoDetail, getVideoTagsDetail, 0);
-const favoriteDataSource = new BiliApiFavoriteDataSource(
-  getAllFavoriteVideos,
-  getFavoriteFolders,
-  getFavoriteVideos,
-  getCollectedFolders,
-  undefined,
-  getSeasonVideos,
-  2500
-);
-
-const service = new FavoriteSyncService({
-  videoDataSource,
-  favoriteDataSource,
-  videoRepository: new VideoRepository(),
-  collectionRepository: new CollectionRepository(),
-  collectionItemRepository: new CollectionItemRepository(),
-  creatorRepository: new CreatorRepository(),
-  tagRepository: new TagRepository()
-});
-
-const result = await service.syncFavoriteVideos(userId);
-console.log(result.syncedCount, result.failedVideos);
-```
-
-## 数据流
-
-```text
-bili-api.ts
-  -> data-adapters.ts
-  -> favorite-sync-service.ts
-  -> data-converters.ts
-  -> database/implementations
-```
-
+# 本地数据层服务
+仅仅需要知道src\database\repository的使用方法即可,不需要知道数据库的内部细节

@@ -1,95 +1,190 @@
-
 /**
- * 数据转换工具
- * 负责将API数据转换为数据库模型
+ * 收藏同步模块数据转换器
+ * 负责将 B 站 API 数据转换为本地数据库模型
  */
 
-import { Platform, TagSource } from "../../../database/types/base.js";
-import type { Video as DBVideo } from "../../../database/types/video.js";
-import type { Creator as DBCreator } from "../../../database/types/creator.js";
-import type { Tag as DBTag } from "../../../database/types/semantic.js";
-import type { FavoriteTag, FavoriteVideoApiDetail } from "./types.js";
-
-const BILIBILI = Platform.BILIBILI;
+import type { 
+  FavoriteFolderInfo, 
+  SubscribedFavoriteFolderInfo, 
+  FavoriteVideoInfo, 
+  SubscribedFavoriteVideoInfo 
+} from "../../../api/types.js";
+import type { 
+  Video, 
+  Collection, 
+  CollectionItem, 
+  Creator, 
+  Tag 
+} from "../../../database/types/index.js";
+import { Platform } from "../../../database/types/base.js";
+import { TagSource } from "../../../database/types/base.js";
 
 /**
- * 将API视频详情转换为数据库视频模型
+ * 将 B 站收藏夹信息转换为本地收藏夹模型
  */
-export function toDBVideo(videoDetail: FavoriteVideoApiDetail, tagIds: string[]): DBVideo {
+export function convertBiliFolderToLocalCollection(
+  folder:SubscribedFavoriteFolderInfo,
+  type: 'user' | 'subscription',
+  defaultCollectionId?: string,
+  defaultCollectionName?: string,
+  defaultCollectionDescription?: string
+): Omit<Collection, 'collectionId'> {
   return {
-    videoId: videoDetail.bvid,
-    platform: BILIBILI,
-    creatorId: videoDetail.owner.mid.toString(),
-    title: videoDetail.title || "未知标题",
-    description: videoDetail.desc || "",
-    duration: videoDetail.duration || 0,
-    publishTime: videoDetail.pubdate ? videoDetail.pubdate * 1000 : Date.now(),
-    tags: tagIds,
-    createdAt: Date.now(),
-    coverUrl: videoDetail.pic || ""
-  };
-}
-
-/**
- * 批量将API视频详情转换为数据库视频模型
- */
-export function toDBVideos(videoDetails: Array<FavoriteVideoApiDetail & { tagIds: string[] }>): DBVideo[] {
-  return videoDetails.map(detail => toDBVideo(detail, detail.tagIds));
-}
-
-/**
- * 创建失效视频的数据库模型
- * 用于标记无法获取详情的视频（如被删除、下架等）
- */
-export function toInvalidVideo(bvid: string, creatorId?: string, reason?: string): DBVideo {
-  return {
-    videoId: bvid,
-    platform: BILIBILI,
-    creatorId: creatorId || "unknown",
-    title: "失效视频",
-    description: reason || "该视频已失效或无法获取详情",
-    duration: 0,
-    publishTime: Date.now(),
-    tags: [],
-    createdAt: Date.now(),
-    isInvalid: true
-  };
-}
-
-/**
- * 将API UP主信息转换为数据库UP主模型
- */
-export function toDBCreator(mid: number, name: string): DBCreator {
-  return {
-    creatorId: mid.toString(),
-    platform: BILIBILI,
-    name: name || "未知UP主",
-    avatar: "",
-    avatarUrl: "",
-    description: "",
-    isFollowing: 0,
-    createdAt: Date.now(),
-    followTime: Date.now(),
-    isLogout: 0,
-    tagWeights: []
-  };
-}
-
-/**
- * 将API标签转换为数据库标签模型
- */
-export function toDBTag(tag: FavoriteTag): DBTag {
-  return {
-    tagId: tag.tag_id.toString(),
-    name: tag.tag_name || "未知标签",
-    source: TagSource.USER,
+    platform: Platform.BILIBILI,
+    name: folder.title,
+    description: folder.intro || defaultCollectionDescription || "从B站同步的收藏视频",
+    type,
+    isPublic: true,
+    sortOrder: 'time',
+    videoCount: folder.media_count || 0,
+    lastUpdate: Date.now(),
+    lastAddedAt: Date.now(),
     createdAt: Date.now()
   };
 }
 
 /**
- * 批量将API标签转换为数据库标签模型
+ * 将 B 站收藏夹信息转换为本地收藏夹模型（带ID）
  */
-export function toDBTags(tags: FavoriteTag[]): DBTag[] {
-  return tags.map(tag => toDBTag(tag));
+export function convertBiliFolderToLocalCollectionWithId(
+  folder:SubscribedFavoriteFolderInfo,
+  type: 'user' | 'subscription',
+  defaultCollectionId?: string,
+  defaultCollectionName?: string,
+  defaultCollectionDescription?: string
+): Collection {
+  const baseCollection = convertBiliFolderToLocalCollection(
+    folder, 
+    type, 
+    defaultCollectionId, 
+    defaultCollectionName, 
+    defaultCollectionDescription
+  );
+
+  return {
+    ...baseCollection,
+    collectionId: defaultCollectionId || `bili_${folder.id}`,
+  };
+}
+
+/**
+ * 将 B 站视频信息转换为本地视频模型
+ */
+export function convertBiliVideoToLocalVideo(
+  video: FavoriteVideoInfo,
+  tags?: Tag[]
+): Video {
+  return {
+    videoId: video.bvid,
+    platform: Platform.BILIBILI,
+    creatorId: video.upper?.mid || '',
+    title: video.title,
+    description: video.intro || '',
+    duration: video.duration,
+    publishTime: video.pubtime,
+    tags: tags?.map(tag => tag.tagId) || [],
+    createdAt: Date.now(),
+    coverUrl: video.cover,
+    isInvalid: false
+  };
+}
+
+/**
+ * 将 B 站视频信息转换为本地创作者模型
+ */
+export function convertBiliUPToCreator(
+  mid: string,
+  name?: string,
+  avatar?: string,
+  avatarUrl?: string
+): Omit<Creator, 'creatorId'> {
+  return {
+    platform: Platform.BILIBILI,
+    name: name || '',
+    avatar: avatar || '',
+    avatarUrl: avatarUrl || '',
+    isLogout: 0,
+    description: '',
+    createdAt: Date.now(),
+    followTime: Date.now(),
+    isFollowing: 0,
+    tagWeights: []
+  };
+}
+
+/**
+ * 将 B 站视频信息转换为本地创作者模型（带ID）
+ */
+export function convertBiliUPToCreatorWithId(
+  mid: string,
+  name?: string,
+  avatar?: string,
+  avatarUrl?: string
+): Creator {
+  const baseCreator = convertBiliUPToCreator(mid, name, avatar, avatarUrl);
+  return {
+    ...baseCreator,
+    creatorId: mid
+  };
+}
+
+/**
+ * 将 B 站视频信息转换为本地收藏项模型
+ */
+export function convertBiliVideoToCollectionItem(
+  video: FavoriteVideoInfo | SubscribedFavoriteVideoInfo,
+  collectionId: string
+): Omit<CollectionItem, 'itemId' | 'addedAt'> {
+  return {
+    collectionId,
+    videoId: video.bvid,
+    note: '',
+    order: 0
+  };
+}
+
+/**
+ * 将标签名称转换为本地标签模型
+ */
+export function convertTagNameToTag(
+  name: string,
+  source: TagSource = TagSource.SYSTEM
+): Omit<Tag, 'tagId'> {
+  return {
+    name,
+    source
+  };
+}
+
+/**
+ * 将标签名称转换为本地标签模型（带ID）
+ */
+export function convertTagNameToTagWithId(
+  tagId: string,
+  name: string,
+  source: TagSource = TagSource.SYSTEM
+): Tag {
+  return {
+    tagId,
+    name,
+    source
+  };
+}
+
+/**
+ * 从视频描述中提取标签（简单实现）
+ */
+export function extractTagsFromDescription(description: string): string[] {
+  if (!description) return [];
+
+  // 简单实现：提取#标签格式的标签
+  const tagRegex = /#([^\s#]+)/g;
+  const tags: string[] = [];
+  let match;
+
+  while ((match = tagRegex.exec(description)) !== null) {
+    tags.push(match[1]);
+  }
+
+  return tags;
 }

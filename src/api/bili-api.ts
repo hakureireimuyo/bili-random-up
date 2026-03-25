@@ -35,7 +35,8 @@ export {
   getCollectedFolders,
   getAllFavoriteVideos,
   getFavoriteVideos,
-  getSeasonVideos
+  getSeasonVideos,
+  getCollectedVideos
 } from "./favorite.js";
 
 // 导出用户和关注相关API

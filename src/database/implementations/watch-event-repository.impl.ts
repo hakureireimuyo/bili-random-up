@@ -4,7 +4,7 @@
  */
 
 // 接口已移除，直接实现功能
-import { WatchEvent, BehaviorSummary } from '../types/behavior.js';
+import { WatchEvent } from '../types/behavior.js';
 import { Platform, PaginationParams, PaginationResult, TimeRange } from '../types/base.js';
 import { DBUtils, STORE_NAMES } from '../indexeddb/index.js';
 

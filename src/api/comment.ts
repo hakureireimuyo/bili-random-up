@@ -11,7 +11,7 @@ import { apiRequest, type ApiRequestOptions } from "./request.js";
  * @param options API请求选项
  */
 export async function getComments(
-  oid: number,
+  oid: string,
   type = 1,
   options: ApiRequestOptions = {}
 ): Promise<any[]> {

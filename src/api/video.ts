@@ -14,7 +14,7 @@ import { generateWBISign } from "./wbi.js";
  */
 export async function getVideoDetail(
   bvid?: string,
-  aid?: number,
+  aid?: string,
   options: ApiRequestOptions = {}
 ): Promise<VideoInfo | null> {
   let url = "https://api.bilibili.com/x/web-interface/view?";
@@ -56,8 +56,12 @@ export async function getVideoTagsDetail(
   options: ApiRequestOptions = {}
 ): Promise<VideoTag[]> {
   const url = `https://api.bilibili.com/x/tag/archive/tags?bvid=${bvid}`;
-  const data = await apiRequest<VideoTag[]>(url, options);
-  return data ?? [];
+  const data = await apiRequest<any[]>(url, options);
+  if (!Array.isArray(data)) {
+    return [];
+  }
+  // 将 tag_id 转换为 number 类型
+  return data;
 }
 
 /**
@@ -108,7 +112,7 @@ export async function getRelatedVideos(
  * @param options API请求选项
  */
 export async function getUPVideosWithWBI(
-  mid: number,
+  mid: string,
   pn = 1,
   ps = 30,
   options: ApiRequestOptions = {}
