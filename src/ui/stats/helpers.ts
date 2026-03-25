@@ -1,5 +1,6 @@
 
-import type { Category, FilterState, StatsState, UPCacheData } from "./types.js";
+import type { Category, FilterState, StatsState, UPDisplayData } from "./types.js";
+import type { Creator } from "../../database/types/creator.js";
 
 export function countUpTags(upTags: Record<string, string[]>): number {
   return Object.values(upTags).reduce((total, tags) => total + (tags?.length ?? 0), 0);
@@ -23,29 +24,12 @@ export function normalizeTag(tag: string): string {
 export function createInitialState(platform: string = "bilibili"): StatsState {
   return {
     platform: platform as any,
-    allTagCounts: {},
-    filteredTags: [],
-    currentCustomTags: [],
-    categories: [],
-    filteredCategories: [],
     showFollowedOnly: true,
     filters: {
       includeTags: [],
       excludeTags: [],
       includeCategories: [],
       excludeCategories: []
-    },
-    currentUpList: [],
-    currentUpTags: {},
-    tagLibrary: {},
-    upCache: {},
-    categoryCache: {},
-    tagIdToName: {},
-    stats: {
-      totalCreators: 0,
-      followedCount: 0,
-      unfollowedCount: 0,
-      totalTags: 0
     }
   };
 }
@@ -63,13 +47,15 @@ export function resetFilters(filters: FilterState): void {
   filters.excludeTags = [];
   filters.includeCategories = [];
   filters.excludeCategories = [];
+  filters.includeCategoryTags = [];
+  filters.excludeCategoryTags = [];
 }
 
-export function creatorToCacheData(creator: any): UPCacheData {
+export function creatorToCacheData(creator: Creator): UPDisplayData {
   return {
     creatorId: creator.creatorId,
     name: creator.name,
-    avatar: creator.avatar || '',
+    avatar: null, // 头像数据从数据库异步获取
     avatarUrl: creator.avatarUrl || '',
     description: creator.description,
     followTime: creator.followTime,

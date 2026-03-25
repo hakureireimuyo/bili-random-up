@@ -1,7 +1,7 @@
 import { getInputValue, colorFromTag, removeFromList, resetFilters } from "./helpers.js";
 import type { FavoritesState } from "./types.js";
-import { getAllTags as getAllVideoTags } from "../../query/video/index.js";
-import { getTagsByIds } from "../../query/tag/index.js";
+import { getAllTags as getAllVideoTags } from "../../database/query/video/index.js";
+import { getTagsByIds } from "../../database/query/tag/index.js";
 
 type RefreshFn = () => void;
 

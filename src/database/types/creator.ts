@@ -87,4 +87,13 @@ export interface Creator {
    * 记录当前创作者的标签及每个标签的权重
    */
   tagWeights: CreatorTagWeight[];
+  /**
+   * 分类列表
+   * 记录当前创作者所属的分类
+   */
+  categories?: ID[];
+  /**
+   * 更新时间
+   */
+  updatedAt?: Timestamp;
 }

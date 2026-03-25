@@ -1,9 +1,11 @@
 
 import { createDragGhost, getDragContext, removeDragGhost, setDragContext } from "./drag.js";
-import { colorFromTag, getInputValue, normalizeTag } from "./helpers.js";
-import type { StatsState } from "./types.js";
-import { createTag, getTagById } from "../../../query/tag/index.js";
-import { getCreator, updateTagWeights } from "../../../query/creator/index.js";
+import { colorFromTag, normalizeTag } from "./helpers.js";
+import { getInputValue } from "./dom.js";
+import { creatorRepository, tagRepository } from "../../database/repository/index.js";
+import { buildSearchUrl } from '../../utls/url-builder.js';
+import { TagSource } from '../../database/types/base.js';
+import { Tag } from '../../database/types/semantic.js';
 
 type RenderFn = () => void | Promise<void>;
 
@@ -11,28 +13,26 @@ function resolveDetach(): boolean {
   return Boolean(getDragContext() && !getDragContext()?.dropped);
 }
 
-export function renderTagPill(
-  tagId: string,
+export async function renderTagPill(
+  tag: Tag,
   options?: {
     count?: number;
     onDetached?: () => void;
     isAuto?: boolean;
     creatorId?: string;
-    state?: StatsState;
-    rerender?: RenderFn;
+    onRemove?: (creatorId: string, tagName: string) => Promise<void>;
   }
-): HTMLSpanElement {
+): Promise<HTMLSpanElement> {
   const {
     count,
     onDetached,
     isAuto = false,
     creatorId,
-    state,
-    rerender
+    onRemove
   } = options ?? {};
 
-  // 从状态中获取标签名称（仅用于UI显示）
-  const tagName = state?.tagIdToName[tagId] || tagId;
+  const tagName = tag.name
+  const tagId = tag.tagId
 
   const pill = document.createElement("span");
   pill.className = isAuto ? "tag-pill tag-pill-auto" : "tag-pill";
@@ -52,7 +52,7 @@ export function renderTagPill(
 
   pill.addEventListener("click", () => {
     const keyword = encodeURIComponent(tagName);
-    window.open(`https://search.bilibili.com/all?keyword=${keyword}`, "_blank", "noreferrer");
+    window.open(buildSearchUrl(keyword), "_blank", "noreferrer");
   });
 
   pill.addEventListener("dragstart", (e) => {
@@ -77,9 +77,9 @@ export function renderTagPill(
       setDragContext(null);
       pill.style.cursor = "grab";
     } else {
-      if (creatorId !== undefined && state && rerender) {
+      if (creatorId !== undefined && onRemove) {
         if (getDragContext()?.originUpMid === creatorId && !getDragContext()?.dropped) {
-          void queryRemoveTagFromUp(state, creatorId, tagName, rerender);
+          void onRemove(creatorId, tagName);
         }
       } else if (onDetached && resolveDetach()) {
         onDetached();
@@ -91,61 +91,17 @@ export function renderTagPill(
   return pill;
 }
 
-export function renderAutoTagPill(tag: string, count: number): HTMLSpanElement {
+export async function renderAutoTagPill(tag: Tag, count: number): Promise<HTMLSpanElement> {
   return renderTagPill(tag, { count, isAuto: true });
 }
 
 export async function addTagToUp(
-  state: StatsState,
   creatorId: string,
-  tagName: string,
+  tagId: string,
   onChanged?: RenderFn
 ): Promise<void> {
-  const nextTag = normalizeTag(tagName);
-  if (!nextTag) {
-    return;
-  }
-
-  // 查找或创建标签ID
-  let tagId = Object.entries(state.tagIdToName).find(([_, name]) => name === nextTag)?.[0];
-  if (!tagId) {
-    tagId = await createTag({
-      name: nextTag,
-      source: 'user',
-      createdAt: Date.now()
-    });
-    // 更新标签库和映射
-    state.tagLibrary[tagId] = {
-      tagId,
-      name: nextTag,
-      source: 'user'
-    };
-    state.tagIdToName[tagId] = nextTag;
-  }
-
-  // 检查标签是否已存在于UP主
-  const existingTags = state.currentUpTags[creatorId] || [];
-  if (existingTags.includes(tagId)) {
-    return;
-  }
-
   // 添加标签到UP主
-  await updateTagWeights(creatorId, state.platform, [{
-    tagId,
-    source: 'user',
-    count: 0,
-    createdAt: Date.now()
-  }]);
-
-  // 更新缓存(存储标签ID)
-  const upData = state.upCache[creatorId];
-  if (upData) {
-    upData.tags = [...upData.tags, tagId];
-  }
-  state.currentUpTags[creatorId] = [...new Set([...existingTags, tagId])];
-
-  // 更新标签计数
-  state.allTagCounts[tagId] = (state.allTagCounts[tagId] || 0) + 1;
+  await creatorRepository.addTag(creatorId,tagId,TagSource.USER);
 
   if (onChanged) {
     await onChanged();
@@ -153,70 +109,30 @@ export async function addTagToUp(
 }
 
 export async function removeTagFromUp(
-  state: StatsState,
   creatorId: string,
-  tagId: string,
-  onChanged: RenderFn
+  tagid: string,
+  onChanged?: RenderFn
 ): Promise<void> {
-  // 检查标签是否存在于UP主
-  const existingTags = state.currentUpTags[creatorId] || [];
-  if (!existingTags.includes(tagId)) {
-    return;
-  }
-
-  // 获取创作者当前的标签权重
-  const creator = await getCreator(creatorId, state.platform);
-  if (!creator) {
-    return;
-  }
-
-  // 移除指定的标签
-  const updatedTagWeights = creator.tagWeights.filter(tw => tw.tagId !== tagId);
-  await updateTagWeights(creatorId, state.platform, updatedTagWeights);
-
-  // 更新缓存(存储标签ID)
-  const upData = state.upCache[creatorId];
-  if (upData) {
-    upData.tags = upData.tags.filter(t => t !== tagId);
-  }
-  state.currentUpTags[creatorId] = existingTags.filter(t => t !== tagId);
-
-  // 更新标签计数
-  state.allTagCounts[tagId] = Math.max(0, (state.allTagCounts[tagId] || 0) - 1);
+  await creatorRepository.removeTag(creatorId, tagid);
 
   if (onChanged) {
     await onChanged();
   }
 }
 
-export async function addCustomTag(state: StatsState, tagName: string, onChanged: RenderFn): Promise<void> {
-  const next = normalizeTag(tagName);
-  if (!next || state.currentCustomTags.includes(next)) {
-    return;
-  }
-
-  // 创建标签
-  const tagId = await createTag({
-    name: next,
-    source: 'user',
-    createdAt: Date.now()
-  });
-
-  // 更新标签库和映射
-  state.tagLibrary[tagId] = {
-    tagId,
-    name: next,
-    source: 'user'
-  };
-  state.tagIdToName[tagId] = next;
-
-  state.currentCustomTags = [...state.currentCustomTags, next];
+export async function addCustomTag(
+  creatorId: string,
+  tagName: string, 
+  onChanged?: RenderFn
+): Promise<void> {
+  const tagId = await tagRepository.createTag(tagName, TagSource.USER);
+  await creatorRepository.addTag(creatorId, tagId, TagSource.USER);
   if (onChanged) {
     await onChanged();
   }
 }
 
-export async function renderTagList(state: StatsState): Promise<void> {
+export async function renderTagList(): Promise<void> {
   const container = document.getElementById("tag-list");
   if (!container) {
     return;
@@ -224,50 +140,28 @@ export async function renderTagList(state: StatsState): Promise<void> {
 
   container.innerHTML = "";
 
-  // 使用内存中的标签计数，不从数据库查询
-  const tagCounts = new Map<string, number>(Object.entries(state.allTagCounts));
+  // 获取搜索关键词并使用数据层的高效搜索方法
+  const searchTerm = getInputValue("tag-search").trim();
+  const allTagsResult = await tagRepository.query({ 
+    source: TagSource.USER,
+    keyword: searchTerm 
+  });
 
-  // 添加自定义标签（使用次数为0）
-  for (const tagName of state.currentCustomTags) {
-    const tagId = Object.entries(state.tagIdToName).find(([_, name]) => name === tagName)?.[0];
-    if (tagId && !tagCounts.has(tagId)) {
-      tagCounts.set(tagId, 0);
-    }
-  }
-
-  if (tagCounts.size === 0) {
+  if (allTagsResult.data.length === 0) {
     const item = document.createElement("div");
     item.className = "list-item";
-    item.textContent = "暂无分类词条";
+    item.textContent = searchTerm ? "未找到匹配的标签" : "暂无分类词条";
     container.appendChild(item);
     return;
   }
 
-  // 更新状态
-  state.allTagCounts = Object.fromEntries(tagCounts);
-
-  // 搜索过滤（使用标签名称进行搜索）
-  const searchTerm = getInputValue("tag-search").toLowerCase();
-  state.filteredTags = Array.from(tagCounts.keys()).filter((tagId) => {
-    const tagName = state.tagIdToName[tagId] || tagId;
-    return tagName.toLowerCase().includes(searchTerm);
-  });
-
-  // 排序
-  const rows = state.filteredTags
-    .map((tagId) => [tagId, tagCounts.get(tagId)!] as const)
-    .sort((a, b) => b[1] - a[1]);
-
   // 渲染
-  for (const [tagId, count] of rows) {
+  for (const tag of allTagsResult.data) {
     const item = document.createElement("div");
     item.className = "list-item";
     const label = document.createElement("span");
-    label.appendChild(renderTagPill(tagId, { count, state }));
-    const value = document.createElement("span");
-    value.textContent = String(count);
+    label.appendChild(await renderTagPill(tag));
     item.appendChild(label);
-    item.appendChild(value);
     container.appendChild(item);
   }
 }

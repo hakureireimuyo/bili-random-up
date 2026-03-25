@@ -1,20 +1,22 @@
 /**
  * 视频查询实现
  * 基于src/cache和src/database/implementations实现
+ * 只提供对数据的操作接口，不存储任何数据
  */
 
-import type { Video } from '../../database/types/video.js';
-import type { CollectionItem, Collection } from '../../database/types/collection.js';
-import type { Tag } from '../../database/types/semantic.js';
-import type { Creator } from '../../database/types/creator.js';
-import { Platform } from '../../database/types/base.js';
+import type { Video } from '../../../types/video.js';
+import type { CollectionItem, Collection } from '../../../types/collection.js';
+import type { Tag } from '../../../types/semantic.js';
+import type { Creator } from '../../../types/creator.js';
+import { Platform } from '../../../types/base.js';
 import type { VideoIndex, VideoQueryParams, SearchResult, PrefetchConfig, QueryResult, QueryOptions } from '../types.js';
-import { VideoRepository } from '../../database/implementations/video-repository.impl.js';
-import { CollectionRepository } from '../../database/implementations/collection-repository.impl.js';
-import { CollectionItemRepository } from '../../database/implementations/collection-item-repository.impl.js';
-import { TagRepository } from '../../database/implementations/tag-repository.impl.js';
-import { CreatorRepository } from '../../database/implementations/creator-repository.impl.js';
+import { VideoRepository } from '../../../implementations/video-repository.impl.js';
+import { CollectionRepository } from '../../../implementations/collection-repository.impl.js';
+import { CollectionItemRepository } from '../../../implementations/collection-item-repository.impl.js';
+import { TagRepository } from '../../../implementations/tag-repository.impl.js';
+import { CreatorRepository } from '../../../implementations/creator-repository.impl.js';
 import { VideoIndexCache } from '../../cache/index-cache/video-index-cache.js';
+import { videoDataCache } from '../../cache/data-cache/video-data-cache.js';
 import { QueryError } from '../types.js';
 
 // 创建Repository实例
@@ -35,78 +37,7 @@ const prefetchConfig: PrefetchConfig = {
   prefetchPages: 1 // 预取下一页
 };
 
-/**
- * 视频数据缓存
- * 缓存完整的视频数据，用于分页显示
- */
-class VideoDataCache {
-  private cache = new Map<string, Video>();
-  private maxSize = 500; // 最多缓存500个视频
 
-  /**
-   * 批量获取视频数据
-   * 优先从缓存获取，缓存未命中则从数据库加载
-   */
-  async getBatch(videoIds: string[]): Promise<Video[]> {
-    const cachedVideos: Video[] = [];
-    const uncachedIds: string[] = [];
-
-    // 先从缓存获取
-    videoIds.forEach(id => {
-      const cached = this.cache.get(id);
-      if (cached) {
-        cachedVideos.push(cached);
-      } else {
-        uncachedIds.push(id);
-      }
-    });
-
-    // 从数据库加载未缓存的视频
-    if (uncachedIds.length > 0) {
-      try {
-        // 使用VideoRepository获取视频数据
-        const dbVideos = await videoRepository.getVideos(uncachedIds, Platform.BILIBILI);
-        dbVideos.forEach(video => {
-          this.cache.set(video.videoId, video);
-          cachedVideos.push(video);
-        });
-      } catch (error) {
-        console.error('[VideoDataCache] Error loading videos from DB:', error);
-      }
-    }
-
-    return cachedVideos;
-  }
-
-  /**
-   * 预取视频数据
-   */
-  async prefetch(videoIds: string[]): Promise<void> {
-    const uncachedIds = videoIds.filter(id => !this.cache.has(id));
-    if (uncachedIds.length === 0) return;
-
-    try {
-      // 使用VideoRepository获取视频数据
-      const dbVideos = await videoRepository.getVideos(uncachedIds, Platform.BILIBILI);
-      dbVideos.forEach(video => {
-        if (!this.cache.has(video.videoId)) {
-          this.cache.set(video.videoId, video);
-        }
-      });
-    } catch (error) {
-      console.error('[VideoDataCache] Error prefetching videos:', error);
-    }
-  }
-
-  /**
-   * 清空缓存
-   */
-  clear(): void {
-    this.cache.clear();
-  }
-}
-
-const videoDataCache = new VideoDataCache();
 
 /**
  * 构建视频索引
@@ -115,8 +46,9 @@ const videoDataCache = new VideoDataCache();
  */
 export async function buildVideoIndex(collectionId?: string, collectionType?: 'user' | 'subscription'): Promise<void> {
   try {
-    // 清空现有索引
+    // 清空现有索引和数据缓存
     videoIndexCache.clear();
+    videoDataCache.clear();
 
     // 加载收藏夹项
     let collectionItems: CollectionItem[] = [];
@@ -143,6 +75,16 @@ export async function buildVideoIndex(collectionId?: string, collectionType?: 'u
     // 批量加载视频数据
     const videoIds = collectionItems.map(item => item.videoId);
     const videos = await videoRepository.getVideos(videoIds, Platform.BILIBILI);
+
+    // 将视频数据存入缓存
+    const videoDataList: any[] = videos.map(video => ({
+      video,
+      stats: undefined,
+      hotness: undefined,
+      creator: undefined,
+      coverImage: undefined
+    }));
+    videoDataCache.setBatch(videoDataList);
 
     // 构建视频ID到收藏夹ID的映射
     const videoToCollection = new Map<string, string>();
@@ -304,13 +246,13 @@ export async function getAllTags(collectionId?: string): Promise<string[]> {
       videoIds = videos.map(v => v.videoId);
     }
 
-    // 获取所有视频
-    const videos = await videoRepository.getVideos(videoIds, Platform.BILIBILI);
+    // 从缓存获取视频数据
+    const videoDataList = await videoDataCache.getBatch(videoIds);
 
     // 收集所有标签ID
     const tagIds = new Set<string>();
-    videos.forEach(video => {
-      video.tags.forEach(tagId => tagIds.add(tagId));
+    videoDataList.forEach(videoData => {
+      videoData.video.tags.forEach(tagId => tagIds.add(tagId));
     });
 
     return Array.from(tagIds);

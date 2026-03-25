@@ -1,17 +1,27 @@
 
 import { getDragContext } from "./drag.js";
-import { colorFromTag, findCategory, removeFromList, resetFilters } from "./helpers.js";
+import { colorFromTag, removeFromList, resetFilters } from "./helpers.js";
+import { tagRepository, categoryRepository } from "../../database/repository/index.js";
 import type { StatsState } from "./types.js";
 
 type RefreshFn = () => void;
 
+async function getTagName(tagId: string): Promise<string> {
+  const tag = tagRepository.getTag(tagId);
+  return tag?.name || tagId;
+}
+
 function createFilterTag(tagId: string, type: "include" | "exclude", state: StatsState, refresh: RefreshFn): HTMLElement {
-  const tagName = state.tagIdToName[tagId] || tagId;
   const tagEl = document.createElement("div");
   tagEl.className = "filter-tag";
-  tagEl.textContent = tagName;
-  tagEl.style.backgroundColor = colorFromTag(tagName);
+  tagEl.textContent = tagId; // 初始显示tagId，异步加载后会更新
+  tagEl.style.backgroundColor = colorFromTag(tagId);
   tagEl.dataset.tagId = tagId;
+  
+  // 异步获取标签名称
+  void getTagName(tagId).then(tagName => {
+    tagEl.textContent = tagName;
+  });
 
   const removeBtn = document.createElement("span");
   removeBtn.className = "remove-tag";
@@ -35,13 +45,13 @@ function createFilterTag(tagId: string, type: "include" | "exclude", state: Stat
   return tagEl;
 }
 
-function createFilterCategory(
+async function createFilterCategory(
   categoryId: string,
   type: "include" | "exclude",
   state: StatsState,
   refresh: RefreshFn
-): HTMLElement {
-  const category = findCategory(state.categories, categoryId);
+): Promise<HTMLElement> {
+  const category = await categoryRepository.getCategory(categoryId);
   const categoryEl = document.createElement("div");
   categoryEl.className = "filter-tag filter-tag-category";
   categoryEl.style.backgroundColor = "#2b6cff";
@@ -70,7 +80,7 @@ function createFilterCategory(
   return categoryEl;
 }
 
-export function renderFilterTags(state: StatsState, refresh: RefreshFn): void {
+export async function renderFilterTags(state: StatsState, refresh: RefreshFn): Promise<void> {
   const includeContainer = document.getElementById("filter-include-tags");
   const excludeContainer = document.getElementById("filter-exclude-tags");
   if (!includeContainer || !excludeContainer) {
@@ -87,26 +97,52 @@ export function renderFilterTags(state: StatsState, refresh: RefreshFn): void {
     excludeContainer.appendChild(createFilterTag(tag, "exclude", state, refresh));
   }
   for (const categoryId of state.filters.includeCategories) {
-    includeContainer.appendChild(createFilterCategory(categoryId, "include", state, refresh));
+    includeContainer.appendChild(await createFilterCategory(categoryId, "include", state, refresh));
   }
   for (const categoryId of state.filters.excludeCategories) {
-    excludeContainer.appendChild(createFilterCategory(categoryId, "exclude", state, refresh));
+    excludeContainer.appendChild(await createFilterCategory(categoryId, "exclude", state, refresh));
   }
 }
 
-function applyCategoryFilter(state: StatsState, categoryId: string, type: "include" | "exclude"): void {
-  if (type === "include") {
-    if (!state.filters.includeCategories.includes(categoryId)) {
-      state.filters.includeCategories.push(categoryId);
-    }
-    state.filters.excludeCategories = removeFromList(state.filters.excludeCategories, categoryId);
+async function applyCategoryFilter(state: StatsState, categoryId: string, type: "include" | "exclude"): Promise<void> {
+  // 获取分类信息
+  const category = await categoryRepository.getCategory(categoryId);
+  if (!category) {
     return;
   }
 
+  if (type === "include") {
+    // 添加分类ID到包含列表
+    if (!state.filters.includeCategories.includes(categoryId)) {
+      state.filters.includeCategories.push(categoryId);
+    }
+    // 从排除列表中移除
+    state.filters.excludeCategories = removeFromList(state.filters.excludeCategories, categoryId);
+    // 添加分类的标签列表（OR条件）
+    state.filters.includeCategoryTags = state.filters.includeCategoryTags.filter(ct => ct.categoryId !== categoryId);
+    state.filters.includeCategoryTags.push({
+      categoryId,
+      tagIds: category.tagIds
+    });
+    // 从排除标签列表中移除
+    state.filters.excludeCategoryTags = state.filters.excludeCategoryTags.filter(ct => ct.categoryId !== categoryId);
+    return;
+  }
+
+  // 添加分类ID到排除列表
   if (!state.filters.excludeCategories.includes(categoryId)) {
     state.filters.excludeCategories.push(categoryId);
   }
+  // 从包含列表中移除
   state.filters.includeCategories = removeFromList(state.filters.includeCategories, categoryId);
+  // 添加分类的标签列表（NOT条件）
+  state.filters.excludeCategoryTags = state.filters.excludeCategoryTags.filter(ct => ct.categoryId !== categoryId);
+  state.filters.excludeCategoryTags.push({
+    categoryId,
+    tagIds: category.tagIds
+  });
+  // 从包含标签列表中移除
+  state.filters.includeCategoryTags = state.filters.includeCategoryTags.filter(ct => ct.categoryId !== categoryId);
 }
 
 function applyTagFilter(state: StatsState, tagId: string, type: "include" | "exclude"): void {
@@ -153,9 +189,10 @@ export function setupDragAndDrop(state: StatsState, refresh: RefreshFn): void {
         try {
           const payload = JSON.parse(categoryTagData) as { categoryId?: string };
           if (payload.categoryId) {
-            applyCategoryFilter(state, payload.categoryId, zone.type);
-            renderFilterTags(state, refresh);
-            refresh();
+            void applyCategoryFilter(state, payload.categoryId, zone.type).then(() => {
+              void renderFilterTags(state, refresh);
+              refresh();
+            });
           }
         } catch {
           return;
@@ -175,12 +212,12 @@ export function setupDragAndDrop(state: StatsState, refresh: RefreshFn): void {
         if (parsed.tagId) {
           tagId = parsed.tagId;
         } else {
-          // 兼容旧格式（仅标签名称）
-          tagId = Object.entries(state.tagIdToName).find(([_, name]) => name === tagData)?.[0] || tagData;
+          // 兼容旧格式（仅标签名称）- 直接使用tagName作为tagId
+          tagId = parsed.tagName || tagData;
         }
       } catch {
-        // 如果不是 JSON 格式，尝试作为标签名称处理
-        tagId = Object.entries(state.tagIdToName).find(([_, name]) => name === tagData)?.[0] || tagData;
+        // 如果不是 JSON 格式，直接使用原始数据作为tagId
+        tagId = tagData;
       }
 
       const currentDrag = getDragContext();
@@ -189,14 +226,14 @@ export function setupDragAndDrop(state: StatsState, refresh: RefreshFn): void {
       }
 
       applyTagFilter(state, tagId, zone.type);
-      renderFilterTags(state, refresh);
+      void renderFilterTags(state, refresh);
       refresh();
     });
   }
 }
 
-export function clearFilters(state: StatsState, refresh: RefreshFn): void {
+export async function clearFilters(state: StatsState, refresh: RefreshFn): Promise<void> {
   resetFilters(state.filters);
-  renderFilterTags(state, refresh);
+  await renderFilterTags(state, refresh);
   refresh();
 }

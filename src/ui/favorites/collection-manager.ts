@@ -1,9 +1,9 @@
 import type { Collection } from "../../database/types/collection.js";
 import type { FavoritesState } from "./types.js";
 import { updateFilterOptions } from "./filter-manager.js";
-import { buildVideoIndex, executeQuery, getVideos } from "../../query/video/index.js";
-import { getAllCollections } from "../../query/collection/index.js";
-import { getTagsByIds } from "../../query/tag/index.js";
+import { buildVideoIndex, executeQuery, getVideos } from "../../database/query/video/index.js";
+import { getAllCollections } from "../../database/query/collection/index.js";
+import { getTagsByIds } from "../../database/query/tag/index.js";
 
 type RefreshFn = () => void;
 

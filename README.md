@@ -134,7 +134,14 @@ bilibili_discovery/
 │   │   ├── types/              # 数据结构定义
 │   │   ├── interfaces/         # 接口规范定义
 │   │   ├── implementations/    # 接口实现
-│   │   └── indexeddb/         # IndexedDB 基础设施
+│   │   ├── indexeddb/         # IndexedDB 基础设施
+│   │   ├── repository/        # 对外接口层（薄层）
+│   │   ├── manager/           # 核心调度层
+│   │   ├── strategy/          # 策略层
+│   │   ├── plan/              # 查询计划
+│   │   ├── cache/             # 缓存层
+│   │   ├── index-cache/       # 索引缓存层
+│   │   └── query/             # 查询层
 │   ├── api/          # B站API接口
 │   ├── background/    # 后台服务
 │   ├── content/      # 内容脚本

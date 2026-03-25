@@ -1,17 +1,20 @@
 /**
  * 收藏夹查询实现
  * 基于src/cache和src/database/implementations实现
+ * 只提供对数据的操作接口，不存储任何数据
  */
 
-import type { Collection } from '../../database/types/collection.js';
-import type { CollectionItem } from '../../database/types/collection.js';
-import type { Video } from '../../database/types/video.js';
-import { Platform } from '../../database/types/base.js';
+import type { Collection } from '../../../types/collection.js';
+import type { CollectionItem } from '../../../types/collection.js';
+import type { Video } from '../../../types/video.js';
+import { Platform } from '../../../types/base.js';
 import type { QueryResult, QueryOptions, CategoryQueryParams } from '../types.js';
-import { CollectionRepository } from '../../database/implementations/collection-repository.impl.js';
-import { CollectionItemRepository } from '../../database/implementations/collection-item-repository.impl.js';
-import { VideoRepository } from '../../database/implementations/video-repository.impl.js';
+import { CollectionRepository } from '../../../implementations/collection-repository.impl.js';
+import { CollectionItemRepository } from '../../../implementations/collection-item-repository.impl.js';
+import { VideoRepository } from '../../../implementations/video-repository.impl.js';
 import { CollectionIndexCache } from '../../cache/index-cache/collection-index-cache.js';
+import { collectionDataCache } from '../../cache/data-cache/collection-data-cache.js';
+import { videoDataCache } from '../../cache/data-cache/video-data-cache.js';
 import { QueryError } from '../types.js';
 
 // 创建Repository实例
@@ -31,28 +34,14 @@ export async function getAllCollections(
   options: QueryOptions = {}
 ): Promise<QueryResult<Collection>> {
   try {
-    // 检查缓存
-    const cacheKey = 'collections:all';
-    if (options.useCache !== false) {
-      const cached = collectionIndexCache.get(cacheKey);
-      if (cached) {
-        return {
-          data: cached,
-          total: cached.length,
-          page: 0,
-          pageSize: cached.length,
-          hasNext: false,
-          hasPrev: false
-        };
-      }
-    }
-
     // 从数据库获取数据
     const collections = await collectionRepository.getAllCollections();
 
-    // 更新缓存
+    // 将数据存入缓存
     if (options.useCache !== false) {
-      collectionIndexCache.set(cacheKey, collections);
+      collections.forEach(collection => {
+        collectionDataCache.set(collection);
+      });
     }
 
     return {
@@ -80,10 +69,9 @@ export async function getCollectionById(
   options: QueryOptions = {}
 ): Promise<Collection | undefined> {
   try {
-    // 检查缓存
-    const cacheKey = `collection:${collectionId}`;
+    // 先从缓存中获取
     if (options.useCache !== false) {
-      const cached = collectionIndexCache.get(cacheKey);
+      const cached = collectionDataCache.get(collectionId);
       if (cached) {
         return cached;
       }
@@ -94,7 +82,7 @@ export async function getCollectionById(
 
     // 更新缓存
     if (collection && options.useCache !== false) {
-      collectionIndexCache.set(cacheKey, collection);
+      collectionDataCache.set(collection);
     }
 
     return collection;
@@ -119,15 +107,6 @@ export async function getCollectionVideos(
   options: QueryOptions = {}
 ): Promise<QueryResult<Video>> {
   try {
-    // 检查缓存
-    const cacheKey = `collection:${collectionId}:videos:${page}:${pageSize}`;
-    if (options.useCache !== false) {
-      const cached = collectionIndexCache.get(cacheKey);
-      if (cached) {
-        return cached;
-      }
-    }
-
     // 从数据库获取收藏夹项
     const items = await collectionItemRepository.getItemsByCollection(collectionId);
     const videoIds = items.map(item => item.videoId);
@@ -139,8 +118,9 @@ export async function getCollectionVideos(
     const endIndex = startIndex + pageSize;
     const pageVideoIds = videoIds.slice(startIndex, endIndex);
 
-    // 获取视频数据
-    const videos = await videoRepository.getVideos(pageVideoIds, Platform.BILIBILI);
+    // 从缓存获取视频数据
+    const videoDataList = await videoDataCache.getBatch(pageVideoIds);
+    const videos = videoDataList.map(vd => vd.video);
 
     const result: QueryResult<Video> = {
       data: videos,
@@ -150,11 +130,6 @@ export async function getCollectionVideos(
       hasNext: page < totalPages - 1,
       hasPrev: page > 0
     };
-
-    // 更新缓存
-    if (options.useCache !== false) {
-      collectionIndexCache.set(cacheKey, result);
-    }
 
     return result;
   } catch (error) {
@@ -174,6 +149,7 @@ export async function createCollection(collection: Omit<Collection, 'collectionI
 
     // 清空缓存
     collectionIndexCache.clear();
+    collectionDataCache.clear();
 
     return collectionId;
   } catch (error) {
@@ -196,9 +172,8 @@ export async function updateCollection(
     const success = await collectionRepository.updateCollection(collectionId, collection);
 
     if (success) {
-      // 清空缓存
-      collectionIndexCache.delete(`collection:${collectionId}`);
-      collectionIndexCache.delete('collections:all');
+      // 从缓存中删除
+      collectionDataCache.delete(collectionId);
     }
 
     return success;
@@ -218,9 +193,8 @@ export async function deleteCollection(collectionId: string): Promise<boolean> {
     const success = await collectionRepository.deleteCollection(collectionId);
 
     if (success) {
-      // 清空缓存
-      collectionIndexCache.delete(`collection:${collectionId}`);
-      collectionIndexCache.delete('collections:all');
+      // 从缓存中删除
+      collectionDataCache.delete(collectionId);
     }
 
     return success;
@@ -244,8 +218,8 @@ export async function addVideoToCollection(
     const success = await collectionItemRepository.addItem(collectionId, videoId);
 
     if (success) {
-      // 清空相关缓存
-      collectionIndexCache.delete(`collection:${collectionId}:videos:*`);
+      // 从缓存中删除相关视频数据
+      videoDataCache.delete(videoId);
     }
 
     return success;
@@ -269,8 +243,8 @@ export async function removeVideoFromCollection(
     const success = await collectionItemRepository.removeItem(collectionId, videoId);
 
     if (success) {
-      // 清空相关缓存
-      collectionIndexCache.delete(`collection:${collectionId}:videos:*`);
+      // 从缓存中删除相关视频数据
+      videoDataCache.delete(videoId);
     }
 
     return success;

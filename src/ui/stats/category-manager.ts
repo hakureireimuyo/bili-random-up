@@ -1,31 +1,49 @@
-
 import { createDragGhost, getDragContext, removeDragGhost, setDragContext } from "./drag.js";
-import { colorFromTag, findCategory, getInputValue } from "./helpers.js";
+import { colorFromTag } from "./helpers.js";
+import {getInputValue } from './dom.js'
 import type { Category, StatsState } from "./types.js";
-import { addCategory as queryAddCategory, removeCategory as queryRemoveCategory, addTagToCategory as queryAddTagToCategory, removeTagFromCategory as queryRemoveTagFromCategory } from "../query/index.js";
+import { tagRepository, categoryRepository } from "../../database/repository/index.js";
 
 type RenderFn = () => void;
 
-export function addCategory(state: StatsState, name: string, onChanged: RenderFn): void {
-  void queryAddCategory(state, name, onChanged);
+async function getTagName(tagId: string): Promise<string> {
+  const tag = tagRepository.getTag(tagId);
+  return tag?.name || tagId;
 }
 
-export function removeCategory(state: StatsState, categoryId: string, onChanged: RenderFn): void {
-  void queryRemoveCategory(state, categoryId, onChanged);
+export async function addCategory(state: StatsState, name: string, onChanged: RenderFn): Promise<void> {
+  await categoryRepository.createCategory(name);
+  if (onChanged) {
+    await onChanged();
+  }
 }
 
-export function addTagToCategory(state: StatsState, categoryId: string, tag: string, onChanged: RenderFn): void {
-  void queryAddTagToCategory(state, categoryId, tag, onChanged);
+export async function removeCategory(state: StatsState, categoryId: string, onChanged: RenderFn): Promise<void> {
+  await categoryRepository.deleteCategory(categoryId);
+  if (onChanged) {
+    await onChanged();
+  }
 }
 
-export function removeTagFromCategory(
+export async function addTagToCategory(state: StatsState, categoryId: string, tag: string, onChanged: RenderFn): Promise<void> {
+  await categoryRepository.addTagToCategory(categoryId, tag);
+  if (onChanged) {
+    await onChanged();
+  }
+}
+
+export async function removeTagFromCategory(
   state: StatsState,
   categoryId: string,
   tag: string,
   onChanged: RenderFn
-): void {
-  void queryRemoveTagFromCategory(state, categoryId, tag, onChanged);
+): Promise<void> {
+  await categoryRepository.removeTagFromCategory(categoryId, tag);
+  if (onChanged) {
+    await onChanged();
+  }
 }
+
 
 function renderCategoryTagPill(
   state: StatsState,
@@ -33,14 +51,22 @@ function renderCategoryTagPill(
   categoryId: string,
   onChanged: RenderFn
 ): HTMLElement {
-  const tagName = state.tagIdToName[tagId] || tagId;
   const pill = document.createElement("span");
   pill.className = "tag-pill";
-  pill.textContent = tagName;
-  pill.style.backgroundColor = colorFromTag(tagName);
+  pill.textContent = tagId; // 初始显示tagId，异步加载后会更新
+  pill.style.backgroundColor = colorFromTag(tagId);
   pill.draggable = true;
   pill.dataset.tagId = tagId;
+  
+  // 异步获取标签名称
+  void getTagName(tagId).then(tagName => {
+    pill.textContent = tagName;
+    // 更新颜色
+    pill.style.backgroundColor = colorFromTag(tagName);
+  });
+  
   pill.addEventListener("dragstart", (e) => {
+    const tagName = pill.textContent || tagId;
     if (e.dataTransfer) {
       e.dataTransfer.setData("application/x-bili-category-tag", JSON.stringify({ tagId, categoryId }));
       e.dataTransfer.effectAllowed = "move";
@@ -131,7 +157,7 @@ function renderCategoryItem(state: StatsState, category: Category, onChanged: Re
   tagsContainer.dataset.categoryId = category.id;
   setupCategoryTagDropZone(tagsContainer, state, category.id, onChanged);
 
-  for (const tagId of category.tags) {
+  for (const tagId of category.tagIds) {
     tagsContainer.appendChild(renderCategoryTagPill(state, tagId, category.id, onChanged));
   }
 
@@ -140,14 +166,17 @@ function renderCategoryItem(state: StatsState, category: Category, onChanged: Re
   return item;
 }
 
-export function renderCategories(state: StatsState, onChanged: RenderFn): void {
+export async function renderCategories(state: StatsState, onChanged: RenderFn): Promise<void> {
   const container = document.getElementById("category-list");
   if (!container) {
     return;
   }
 
   container.innerHTML = "";
-  if (state.categories.length === 0) {
+  
+  // 从数据层获取分类数据
+  const categories = await categoryRepository.getAllCategories();
+  if (categories.length === 0) {
     const item = document.createElement("div");
     item.className = "list-item";
     item.textContent = "暂无大分区";
@@ -156,8 +185,8 @@ export function renderCategories(state: StatsState, onChanged: RenderFn): void {
   }
 
   const searchTerm = getInputValue("category-search").toLowerCase();
-  state.filteredCategories = state.categories.filter((category) => category.name.toLowerCase().includes(searchTerm));
-  for (const category of state.filteredCategories) {
+  const filteredCategories = categories.filter((category) => category.name.toLowerCase().includes(searchTerm));
+  for (const category of filteredCategories) {
     container.appendChild(renderCategoryItem(state, category, onChanged));
   }
 }

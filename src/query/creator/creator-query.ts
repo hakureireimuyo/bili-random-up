@@ -3,12 +3,13 @@
  * 基于src/cache和src/database/implementations实现
  */
 
-import type { Creator } from '../../database/types/creator.js';
-import type { Platform } from '../../database/types/base.js';
+import type { Creator } from '../../../types/creator.js';
+import type { Platform } from '../../../types/base.js';
 import type { QueryResult, QueryOptions, CreatorQueryParams } from '../types.js';
-import { CreatorRepository } from '../../database/implementations/creator-repository.impl.js';
+import { CreatorRepository } from '../../../implementations/creator-repository.impl.js';
 import { QueryError } from '../types.js';
-import { CreatorIndexCache, type CreatorIndex, type CreatorIndexQuery } from '../../cache/index-cache/index.js';
+import { CreatorIndexCache, type CreatorIndex } from '../../cache/index-cache/index.js';
+import { CreatorQueryEngine, type CreatorIndexQuery, type TagExpression } from '../../query/creator/index.js';
 import { creatorDataCache } from '../../cache/data-cache/creator-data-cache.js';
 
 // 创建Repository实例
@@ -23,34 +24,25 @@ const creatorIndexCache = new CreatorIndexCache(1000);
 function creatorToIndex(creator: Creator): CreatorIndex {
   return {
     creatorId: creator.creatorId,
-    platform: creator.platform,
     name: creator.name,
     tags: creator.tagWeights.map(tw => tw.tagId),
-    categories: creator.categories || [],
-    isFollowing: creator.isFollowing === 1,
-    followTime: creator.followTime,
-    createdAt: creator.createdAt,
-    updatedAt: creator.updatedAt
+    isFollowing: creator.isFollowing === 1
   };
 }
 
 /**
  * 搜索创作者(带分页)
- * @param platform 平台
  * @param params 查询参数
  * @param options 查询选项
  * @returns 查询结果
  */
 export async function searchCreators(
-  platform: Platform,
-  params: Omit<CreatorQueryParams, 'platform'>,
+  params: CreatorQueryParams,
   options: QueryOptions = {}
 ): Promise<QueryResult<Creator>> {
   try {
     const {
       isFollowing,
-      includeCategories = [],
-      excludeCategories = [],
       keyword = '',
       page = 0,
       pageSize = 50
@@ -58,44 +50,34 @@ export async function searchCreators(
 
     // 构建索引查询条件
     const indexQuery: CreatorIndexQuery = {
-      platform,
       keyword,
       isFollowing: isFollowing !== undefined ? (isFollowing ? true : undefined) : undefined
     };
 
-    // 添加分类过滤
-    if (includeCategories.length > 0) {
-      indexQuery.categories = includeCategories;
-    }
-
-    // 先从索引缓存中查询
-    let creatorIndexes: CreatorIndex[] = creatorIndexCache.query(indexQuery);
+    // 从索引缓存中获取所有创作者索引
+    let allIndexes = creatorIndexCache.values();
 
     // 如果索引缓存中没有数据，从数据库加载
-    if (creatorIndexes.length === 0) {
+    if (allIndexes.length === 0) {
       console.log('[CreatorQuery] 索引缓存为空，从数据库加载所有创作者索引');
-      const allCreators = await creatorRepo.getAllCreators(platform);
+      const allCreators = await creatorRepo.getAllCreators('bilibili' as Platform);
 
       // 将所有创作者转换为索引并缓存
       const indexes = allCreators.map(creatorToIndex);
       creatorIndexCache.setBatch(indexes);
 
-      // 重新查询
-      creatorIndexes = creatorIndexCache.query(indexQuery);
+      // 重新获取
+      allIndexes = creatorIndexCache.values();
     }
+
+    // 使用查询引擎进行过滤
+    let creatorIndexes = CreatorQueryEngine.query(allIndexes, indexQuery);
 
     // 使用标签逻辑表达式进行过滤
     if (params.tagExpressions && params.tagExpressions.length > 0) {
       console.log('[CreatorQuery] 使用标签逻辑表达式进行过滤');
-      const filteredIds = creatorIndexCache.queryByTagExpressions(params.tagExpressions);
+      const filteredIds = CreatorQueryEngine.queryByTagExpressions(allIndexes, params.tagExpressions);
       creatorIndexes = creatorIndexes.filter(index => filteredIds.includes(index.creatorId));
-    }
-
-    // 排除分类过滤
-    if (excludeCategories.length > 0) {
-      creatorIndexes = creatorIndexes.filter(index =>
-        !excludeCategories.some(categoryId => index.categories.includes(categoryId))
-      );
     }
 
     // 计算总数和分页
@@ -124,7 +106,7 @@ export async function searchCreators(
     // 从数据库获取未缓存的数据
     let dbCreators: Creator[] = [];
     if (uncachedIds.length > 0) {
-      const creatorsMap = await creatorRepo.getCreators(uncachedIds, platform);
+      const creatorsMap = await creatorRepo.getCreators(uncachedIds, 'bilibili' as Platform);
       dbCreators = uncachedIds.map(id => creatorsMap.find(c => c.creatorId === id)).filter((c): c is Creator => c !== undefined);
 
       // 将新获取的数据存入缓存
@@ -157,13 +139,11 @@ export async function searchCreators(
 /**
  * 获取单个创作者
  * @param creatorId 创作者ID
- * @param platform 平台
  * @param options 查询选项
  * @returns 创作者对象
  */
 export async function getCreator(
   creatorId: string,
-  platform: Platform,
   options: QueryOptions = {}
 ): Promise<Creator | undefined> {
   try {
@@ -176,7 +156,7 @@ export async function getCreator(
     }
 
     // 从数据库获取数据
-    const creator = await creatorRepo.getCreator(creatorId, platform);
+    const creator = await creatorRepo.getCreator(creatorId, 'bilibili' as Platform);
 
     // 如果获取到数据，更新缓存
     if (creator && options.useCache !== false) {
@@ -198,20 +178,18 @@ export async function getCreator(
 /**
  * 批量获取创作者
  * @param creatorIds 创作者ID列表
- * @param platform 平台
  * @param options 查询选项
  * @returns 创作者对象Map
  */
 export async function getCreatorsByIds(
   creatorIds: string[],
-  platform: Platform,
   options: QueryOptions = {}
 ): Promise<Map<string, Creator>> {
   try {
     const result = new Map<string, Creator>();
 
     for (const creatorId of creatorIds) {
-      const creator = await getCreator(creatorId, platform, options);
+      const creator = await getCreator(creatorId, options);
       if (creator) {
         result.set(creatorId, creator);
       }

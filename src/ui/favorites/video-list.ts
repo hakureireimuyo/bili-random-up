@@ -2,7 +2,7 @@ import type { FavoritesState, AggregatedCollectionVideo } from "./types.js";
 import { formatDuration, colorFromTag } from "./helpers.js";
 import { createLink } from "./dom.js";
 import { buildUserSpaceUrl, buildSearchUrl, buildVideoUrl } from "../../utls/url-builder.js";
-import { getTagsByIds } from "../../query/tag/index.js";
+import { getTagsByIds } from "../../database/query/tag/index.js";
 
 type RefreshFn = () => void;
 

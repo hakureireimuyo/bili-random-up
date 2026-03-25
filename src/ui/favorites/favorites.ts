@@ -18,7 +18,7 @@ import { createInitialState, setLoading, showError, updatePagination } from "./h
 import { renderVideos, changePage } from "./video-list.js";
 import type { FavoritesState } from "./types.js";
 import { clearAllCaches } from "../cache/index.js";
-import { debugCollectionData, debugAllCollections, debugAllVideos, runFullDiagnostics } from "../../query/video/debug.js";
+import { debugCollectionData, debugAllCollections, debugAllVideos, runFullDiagnostics } from "../../database/query/video/debug.js";
 
 // DOM元素
 const elements = {

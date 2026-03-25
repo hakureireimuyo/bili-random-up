@@ -4,13 +4,13 @@
  * 使用Repository实现层访问数据
  */
 
-import type { Collection } from '../../database/types/collection.js';
-import type { CollectionItem } from '../../database/types/collection.js';
-import type { Video } from '../../database/types/video.js';
-import { Platform } from '../../database/types/base.js';
-import { CollectionRepository } from '../../database/implementations/collection-repository.impl.js';
-import { CollectionItemRepository } from '../../database/implementations/collection-item-repository.impl.js';
-import { VideoRepository } from '../../database/implementations/video-repository.impl.js';
+import type { Collection } from '../../../types/collection.js';
+import type { CollectionItem } from '../../../types/collection.js';
+import type { Video } from '../../../types/video.js';
+import { Platform } from '../../../types/base.js';
+import { CollectionRepository } from '../../../implementations/collection-repository.impl.js';
+import { CollectionItemRepository } from '../../../implementations/collection-item-repository.impl.js';
+import { VideoRepository } from '../../../implementations/video-repository.impl.js';
 import { CollectionIndexCache } from '../../cache/index-cache/collection-index-cache.js';
 
 // 创建Repository实例

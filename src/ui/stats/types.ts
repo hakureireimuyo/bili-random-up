@@ -1,23 +1,13 @@
 
-import type { Platform } from "../../../database/types/base.js";
+import type { Platform } from "../../database/types/base.js";
 
 /**
- * UI使用的分类类型
+ * UI使用的分类类型 - 与数据库Category类型保持一致
  */
 export interface Category {
   id: string;
   name: string;
-  tags: string[];
-}
-
-/**
- * 筛选状态
- */
-export interface FilterState {
-  includeTags: string[];
-  excludeTags: string[];
-  includeCategories: string[];
-  excludeCategories: string[];
+  tagIds: string[];
 }
 
 /**
@@ -32,12 +22,12 @@ export interface DragContext {
 }
 
 /**
- * UP主缓存数据
+ * UP主显示数据
  */
-export interface UPCacheData {
+export interface UPDisplayData {
   creatorId: string;
   name: string;
-  avatar: string;
+  avatar: Blob;
   avatarUrl: string;
   description: string;
   followTime: number;
@@ -46,9 +36,9 @@ export interface UPCacheData {
 }
 
 /**
- * 标签缓存数据
+ * 标签显示数据
  */
-export interface TagCacheData {
+export interface TagDisplayData {
   tagId: string;
   name: string;
   source: "user" | "system";
@@ -57,56 +47,33 @@ export interface TagCacheData {
 }
 
 /**
- * 统计状态
+ * 分类标签列表
+ */
+export interface CategoryTagList {
+  categoryId: string;
+  tagIds: string[];
+}
+
+/**
+ * 过滤状态
+ */
+export interface FilterState {
+  includeTags: string[];
+  excludeTags: string[];
+  includeCategories: string[];
+  excludeCategories: string[];
+  includeCategoryTags: CategoryTagList[]; // 分类中的标签列表（OR条件）
+  excludeCategoryTags: CategoryTagList[]; // 分类中的标签列表（NOT条件）
+}
+
+/**
+ * 统计页面状态 - 仅包含页面UI必须的状态
  */
 export interface StatsState {
   // 平台
   platform: Platform;
-
-  // 所有标签计数
-  allTagCounts: Record<string, number>;
-
-  // 过滤后的标签
-  filteredTags: string[];
-
-  // 当前自定义标签
-  currentCustomTags: string[];
-
-  // 分类列表
-  categories: Category[];
-
-  // 过滤后的分类
-  filteredCategories: Category[];
-
   // 是否只显示已关注
   showFollowedOnly: boolean;
-
-  // 筛选状态
+  // 过滤状态
   filters: FilterState;
-
-  // 当前UP主ID列表
-  currentUpList: string[];
-
-  // UP主标签映射
-  currentUpTags: Record<string, string[]>;
-
-  // 标签库
-  tagLibrary: Record<string, TagCacheData>;
-
-  // UP主缓存
-  upCache: Record<string, UPCacheData>;
-
-  // 分类缓存
-  categoryCache: Record<string, Category>;
-
-  // 标签ID到名称的映射
-  tagIdToName: Record<string, string>;
-
-  // 统计数据
-  stats: {
-    totalCreators: number;
-    followedCount: number;
-    unfollowedCount: number;
-    totalTags: number;
-  };
 }
