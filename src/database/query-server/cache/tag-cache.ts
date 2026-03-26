@@ -8,7 +8,7 @@
  */
 export interface TagCacheEntry {
   /** 标签ID */
-  tagId: string;
+  tagId: number;
   /** 索引数组（升序，无重复） */
   indices: number[];
   /** 最后更新时间 */
@@ -29,13 +29,13 @@ export interface TagCacheEntry {
  */
 export class TagCache {
   /** 标签到索引数组的映射 */
-  private tagMap: Map<string, number[]> = new Map();
+  private tagMap: Map<number, number[]> = new Map();
 
   /** 全局索引映射（id → index） */
-  private indexMap: Map<string, number> = new Map();
+  private indexMap: Map<number, number> = new Map();
 
   /** 反向索引映射（index → id） */
-  private reverseIndexMap: Map<number, string> = new Map();
+  private reverseIndexMap: Map<number, number> = new Map();
 
   /** 下一个可用的索引 */
   private nextIndex: number = 0;
@@ -48,7 +48,7 @@ export class TagCache {
    * 初始化全局索引映射
    * @param ids 所有ID的列表
    */
-  initializeIndexMap(ids: string[]): void {
+  initializeIndexMap(ids: number[]): void {
     this.indexMap.clear();
     this.reverseIndexMap.clear();
     this.nextIndex = 0;
@@ -65,7 +65,7 @@ export class TagCache {
    * @param id 数据ID
    * @returns 索引，如果不存在返回undefined
    */
-  getIndex(id: string): number | undefined {
+  getIndex(id: number): number | undefined {
     return this.indexMap.get(id);
   }
 
@@ -74,7 +74,7 @@ export class TagCache {
    * @param index 索引
    * @returns 数据ID，如果不存在返回undefined
    */
-  getId(index: number): string | undefined {
+  getId(index: number): number | undefined {
     return this.reverseIndexMap.get(index);
   }
 
@@ -83,8 +83,8 @@ export class TagCache {
    * @param ids ID列表
    * @returns 索引映射
    */
-  getIndices(ids: string[]): Map<string, number> {
-    const result = new Map<string, number>();
+  getIndices(ids: number[]): Map<number, number> {
+    const result = new Map<number, number>();
     ids.forEach(id => {
       const index = this.indexMap.get(id);
       if (index !== undefined) {
@@ -99,8 +99,8 @@ export class TagCache {
    * @param indices 索引列表
    * @returns ID映射
    */
-  getIds(indices: number[]): Map<number, string> {
-    const result = new Map<number, string>();
+  getIds(indices: number[]): Map<number, number> {
+    const result = new Map<number, number>();
     indices.forEach(index => {
       const id = this.reverseIndexMap.get(index);
       if (id !== undefined) {
@@ -115,7 +115,7 @@ export class TagCache {
    * @param id 新的数据ID
    * @returns 分配的索引
    */
-  addId(id: string): number {
+  addId(id: number): number {
     if (this.indexMap.has(id)) {
       return this.indexMap.get(id)!;
     }
@@ -131,7 +131,7 @@ export class TagCache {
    * @param id 要移除的数据ID
    * @returns 是否成功移除
    */
-  removeId(id: string): boolean {
+  removeId(id: number): boolean {
     const index = this.indexMap.get(id);
     if (index === undefined) {
       return false;
@@ -154,7 +154,7 @@ export class TagCache {
    * @param tagId 标签ID
    * @param indices 索引数组（升序，无重复）
    */
-  setTagIndices(tagId: string, indices: number[]): void {
+  setTagIndices(tagId: number, indices: number[]): void {
     // 确保数组是升序且无重复的
     const sortedIndices = this.sortAndUnique(indices);
     this.tagMap.set(tagId, sortedIndices);
@@ -164,20 +164,20 @@ export class TagCache {
    * 批量设置标签的索引数组
    * @param entries 标签到索引数组的映射
    */
-  setTagIndicesBatch(entries: Map<string, number[]> | Record<string, number[]>): void {
+  setTagIndicesBatch(entries: Map<number, number[]> | Record<string, number[]>): void {
     if (entries instanceof Map) {
       entries.forEach((indices, tagId) => this.setTagIndices(tagId, indices));
     } else {
-      Object.entries(entries).forEach(([tagId, indices]) => this.setTagIndices(tagId, indices));
+      Object.entries(entries).forEach(([tagId, indices]) => this.setTagIndices(Number(tagId), indices));
     }
   }
 
-  /**
+  /**number
    * 获取标签的索引数组
    * @param tagId 标签ID
    * @returns 索引数组，如果不存在返回空数组
    */
-  getTagIndices(tagId: string): number[] {
+  getTagIndices(tagId: number): number[] {
     return this.tagMap.get(tagId) || [];
   }
 
@@ -186,8 +186,8 @@ export class TagCache {
    * @param tagIds 标签ID列表
    * @returns 标签到索引数组的映射
    */
-  getTagIndicesBatch(tagIds: string[]): Map<string, number[]> {
-    const result = new Map<string, number[]>();
+  getTagIndicesBatch(tagIds: number[]): Map<number, number[]> {
+    const result = new Map<number, number[]>();
     tagIds.forEach(tagId => {
       const indices = this.tagMap.get(tagId);
       if (indices) {
@@ -202,7 +202,7 @@ export class TagCache {
    * @param tagId 标签ID
    * @param index 要添加的索引
    */
-  addIndexToTag(tagId: string, index: number): void {
+  addIndexToTag(tagId: number, index: number): void {
     let indices = this.tagMap.get(tagId);
     if (!indices) {
       indices = [];
@@ -223,7 +223,7 @@ export class TagCache {
    * @param tagId 标签ID
    * @param indices 要添加的索引列表
    */
-  addIndicesToTag(tagId: string, indices: number[]): void {
+  addIndicesToTag(tagId: number, indices: number[]): void {
     indices.forEach(index => this.addIndexToTag(tagId, index));
   }
 
@@ -233,7 +233,7 @@ export class TagCache {
    * @param index 要移除的索引
    * @returns 是否成功移除
    */
-  removeIndexFromTag(tagId: string, index: number): boolean {
+  removeIndexFromTag(tagId: number, index: number): boolean {
     const indices = this.tagMap.get(tagId);
     if (!indices) {
       return false;
@@ -252,7 +252,7 @@ export class TagCache {
    * @param indices 要移除的索引列表
    * @returns 成功移除的数量
    */
-  removeIndicesFromTag(tagId: string, indices: number[]): number {
+  removeIndicesFromTag(tagId: number, indices: number[]): number {
     let count = 0;
     indices.forEach(index => {
       if (this.removeIndexFromTag(tagId, index)) {
@@ -267,7 +267,7 @@ export class TagCache {
    * @param tagId 标签ID
    * @returns 标签缓存条目，如果不存在返回undefined
    */
-  getTagEntry(tagId: string): TagCacheEntry | undefined {
+  getTagEntry(tagId: number): TagCacheEntry | undefined {
     const indices = this.tagMap.get(tagId);
     if (!indices) {
       return undefined;
@@ -285,7 +285,7 @@ export class TagCache {
    * 获取所有标签ID
    * @returns 标签ID列表
    */
-  getTagIds(): string[] {
+  getTagIds(): number[] {
     return Array.from(this.tagMap.keys());
   }
 

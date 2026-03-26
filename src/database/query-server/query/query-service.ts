@@ -7,7 +7,7 @@ import type { QueryCondition, QueryOutput, QueryStats, CreatorIndex } from './ty
 import type { CompositeQueryCondition } from './composite-query-service.js';
 import { IndexCache } from '../cache/index-cache.js';
 import { CompositeQueryService } from './composite-query-service.js';
-import { CreatorRepository } from '../../implementations/creator-repository.impl.js';
+import { CreatorRepository } from '../../repositories/creator-repository.js';
 import { Platform } from '../../types/base.js';
 import { CacheManager } from '../cache/cache-manager.js';
 import { ID } from '../../types/base.js';

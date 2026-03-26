@@ -1,346 +1,385 @@
-import type { StatsState, UPDisplayData } from "./types.js";
-import type { Creator } from "../../database/types/creator.js";
-import type { PaginatedResult } from "../../database/manager/types.js";
-import type { TagExpression } from "../../database/query/creator/creator-query-engine.js";
-import { getDragContext } from "./drag.js";
-import { creatorToCacheData } from "./helpers.js";
-import { getInputValue, updateToggleLabel } from "./dom.js";
-import { addTagToUp, renderTagPill, removeTagFromUp } from "./tag-manager.js";
-import { creatorRepository, tagRepository } from "../../database/repository/index.js";
-import { buildUserSpaceUrl } from '../../utls/url-builder.js';
+import { 
+  QueryService,
+  CacheManager,
+  BaseBookManager,
+  Book,
+  type BookQueryResult,
+  type IIndexConverter,
+  type IQueryService,
+  type IDataRepository,
+  type BookType
+} from "../../database/index.js";
+import type { Creator, ID, Platform } from "../../database/types/index.js";
+import type { StatsState, PaginationState } from "./types.js";
+import type { ServiceContainer } from "./services.js";
+import type { 
+  QueryCondition,
+  TagExpression
+} from "../../database/query-server/index.js";
+import type { CreatorIndex } from "../../database/query-server/cache/types.js";
+import { updateToggleLabel } from "../../utls/dom-utils.js";
+import { createDragGhost, setDragContext, type DragContext } from "../../utls/drag-utils.js";
+import { colorFromTag } from "../../utls/tag-utils.js";
 
 type RenderFn = () => void;
 
-let paginationState = {
+let paginationState: PaginationState = {
   currentPage: 0,
   pageSize: 50,
   totalPages: 0,
   totalItems: 0
 };
 
+let services: ServiceContainer | null = null;
+let queryService: QueryService | null = null;
+let bookManager: BaseBookManager<Creator, CreatorIndex> | null = null;
+let currentBook: BookType<Creator> | null = null;
+
 /**
- * 从Creator对象提取用户标签ID列表
+ * 创作者索引转换器
+ * 将 Creator 转换为 CreatorIndex
  */
-function extractUserTags(creator: Creator): string[] {
-  return creator.tagWeights
-    .filter(tw => tw.source === 'user')
-    .map(tw => tw.tagId);
+class CreatorIndexConverter implements IIndexConverter<Creator, CreatorIndex> {
+  toIndex(data: Creator): CreatorIndex {
+    return {
+      creatorId: data.creatorId,
+      name: data.name,
+      tags: data.tagWeights.map(tw => tw.tagId),
+      isFollowing: data.isFollowing === 1
+    };
+  }
+
+  getId(data: Creator): number {
+    return data.creatorId;
+  }
 }
 
 /**
- * 将Creator对象转换为UPDisplayData
+ * 创作者查询服务适配器
+ * 将 QueryService 适配为 IQueryService 接口
  */
-function creatorToUPDisplayData(creator: Creator): UPDisplayData {
+class CreatorQueryServiceAdapter implements IQueryService<CreatorIndex> {
+  private queryService: QueryService;
+
+  constructor(queryService: QueryService) {
+    this.queryService = queryService;
+  }
+
+  async queryIds(condition: QueryCondition): Promise<number[]> {
+    return await this.queryService.queryResultIds(condition);
+  }
+}
+
+/**
+ * 初始化服务
+ */
+export function initUpListServices(container: ServiceContainer): void {
+  services = container;
+  queryService = new QueryService(services.creatorRepo);
+
+  // 初始化 BookManager
+  const cacheManager = CacheManager.getInstance();
+  const dataCache = cacheManager.getCreatorDataCache();
+  const indexCache = cacheManager.getIndexCache();
+  const indexConverter = new CreatorIndexConverter();
+  const queryServiceAdapter = new CreatorQueryServiceAdapter(queryService);
+
+  bookManager = new BaseBookManager<Creator, CreatorIndex>(
+    dataCache,
+    indexCache,
+    services.creatorRepo as unknown as IDataRepository<Creator>,
+    indexConverter,
+    queryServiceAdapter
+  );
+}
+
+/**
+ * 获取服务容器
+ */
+function getServices(): ServiceContainer {
+  if (!services) {
+    throw new Error('UpList services not initialized. Call initUpListServices first.');
+  }
+  return services;
+}
+
+/**
+ * 获取查询服务
+ */
+function getQueryService(): QueryService {
+  if (!queryService) {
+    throw new Error('QueryService not initialized. Call initUpListServices first.');
+  }
+  return queryService;
+}
+
+/**
+ * 获取 BookManager
+ */
+function getBookManager(): BaseBookManager<Creator, CreatorIndex> {
+  if (!bookManager) {
+    throw new Error('BookManager not initialized. Call initUpListServices first.');
+  }
+  return bookManager;
+}
+
+/**
+ * 获取筛选后的创作者列表
+ */
+export async function getFilteredCreators(
+  state: StatsState,
+  pagination: PaginationState
+): Promise<{ creators: Creator[]; total: number }> {
+  // 构建查询条件
+  const queryCondition = buildQueryCondition(state);
+
+  // 获取或创建 Book
+  if (!currentBook) {
+    currentBook = await getBookManager().createBook(queryCondition, {
+      pageSize: pagination.pageSize
+    });
+  } else {
+    // 更新现有 Book 的索引
+    await currentBook.updateIndex(queryCondition);
+  }
+
+  // 更新分页状态
+  paginationState.totalItems = currentBook.state.totalRecords;
+  paginationState.totalPages = currentBook.state.totalPages;
+
+  // 如果没有结果，返回空列表
+  if (currentBook.state.totalRecords === 0) {
+    return {
+      creators: [],
+      total: 0
+    };
+  }
+
+  // 确保当前页码有效
+  if (pagination.currentPage >= paginationState.totalPages) {
+    paginationState.currentPage = Math.max(0, paginationState.totalPages - 1);
+  }
+
+  // 获取分页数据
+  const result = await currentBook.getPage(paginationState.currentPage, {
+    pageSize: pagination.pageSize,
+    preloadNext: true,
+    preloadCount: 1
+  });
+
   return {
-    ...creatorToCacheData(creator),
-    tags: extractUserTags(creator)
+    creators: result.items,
+    total: result.state.totalRecords
   };
 }
 
 /**
- * 从查询层获取过滤后的UP列表（带分页）
+ * 构建查询条件
  */
-async function fetchFilteredUpList(state: StatsState, page: number = 0): Promise<PaginatedResult<UPDisplayData>> {
-  console.log('[fetchFilteredUpList] 查询参数:', {
+function buildQueryCondition(state: StatsState): QueryCondition {
+  const condition: QueryCondition = {
     platform: state.platform,
-    isFollowing: state.showFollowedOnly,
-    keyword: getInputValue("up-search"),
-    page,
-    pageSize: paginationState.pageSize,
-    filters: state.filters
-  });
+    isFollowing: state.showFollowedOnly ? 1 : 0
+  };
 
-  // 将UI层的筛选条件转换为标签表达式
+  // 添加搜索关键词（如果有）
+  if (state.searchKeyword && state.searchKeyword.trim()) {
+    (condition as any).keyword = state.searchKeyword.trim();
+  }
+
+  // 构建标签表达式
   const tagExpressions: TagExpression[] = [];
-  
-  // 处理包含的标签（AND条件）- 必须包含所有指定标签
+
+  // 处理包含标签（AND 操作）
   if (state.filters.includeTags.length > 0) {
     tagExpressions.push({
-      operator: 'and',
-      tagIds: state.filters.includeTags
+      tagId: state.filters.includeTags.length === 1 
+        ? state.filters.includeTags[0] 
+        : state.filters.includeTags,
+      operator: 'AND'
     });
   }
-  
-  // 处理包含的分类标签列表（OR条件）- 至少包含其中一个标签
-  for (const categoryTag of state.filters.includeCategoryTags) {
-    if (categoryTag.tagIds.length > 0) {
-      tagExpressions.push({
-        operator: 'or',
-        tagIds: categoryTag.tagIds
-      });
-    }
-  }
-  
-  // 处理排除的标签（NOT条件）- 不包含任何指定标签
+
+  // 处理排除标签（NOT 操作）
   if (state.filters.excludeTags.length > 0) {
     tagExpressions.push({
-      operator: 'not',
-      tagIds: state.filters.excludeTags
+      tagId: state.filters.excludeTags.length === 1 
+        ? state.filters.excludeTags[0] 
+        : state.filters.excludeTags,
+      operator: 'NOT'
     });
   }
-  
-  // 处理排除的分类标签列表（NOT条件）
-  // 对于排除的分类，需要确保不包含列表中的任何一个标签
-  for (const categoryTag of state.filters.excludeCategoryTags) {
-    if (categoryTag.tagIds.length > 0) {
+
+  // 处理分类标签
+  state.filters.includeCategoryTags.forEach(category => {
+    if (category.tagIds.length > 0) {
       tagExpressions.push({
-        operator: 'not',
-        tagIds: categoryTag.tagIds
+        tagId: category.tagIds.length === 1 
+          ? category.tagIds[0] 
+          : category.tagIds,
+        operator: 'AND'
       });
     }
-  }
-
-  // 使用Repository接口获取数据
-  const result = await creatorRepository.query({
-    keyword: getInputValue("up-search"),
-    isFollowing: state.showFollowedOnly,
-    page,
-    pageSize: paginationState.pageSize,
-    tagExpressions: tagExpressions.length > 0 ? tagExpressions : undefined
   });
 
-  // 将Creator对象转换为UPDisplayData
-  const data = result.data.map(creatorToUPDisplayData);
-  const totalPages = Math.ceil(result.total / result.pageSize);
-
-  console.log('[fetchFilteredUpList] 总数:', result.total, '总页数:', totalPages);
-  console.log('[fetchFilteredUpList] 当前页获取到的UP数量:', data.length);
-  if (data.length > 0) {
-    console.log('[fetchFilteredUpList] 第一个UP:', data[0]);
-  }
-
-  return {
-    ...result,
-    data,
-    page: result.page,
-    pageSize: result.pageSize,
-    total: result.total,
-    hasNext: result.hasNext,
-    hasPrev: result.hasPrev
-  };
-}
-
-function setupUpTagDropZone(tagsEl: HTMLElement, creatorId: string, state: StatsState, rerender: RenderFn): void {
-  tagsEl.addEventListener("dragover", (e) => {
-    e.preventDefault();
-    tagsEl.classList.add("drag-over");
-  });
-  tagsEl.addEventListener("dragleave", () => {
-    tagsEl.classList.remove("drag-over");
-  });
-  tagsEl.addEventListener("drop", (e) => {
-    e.preventDefault();
-    tagsEl.classList.remove("drag-over");
-    const tagData = e.dataTransfer?.getData("application/x-bili-tag") ?? e.dataTransfer?.getData("text/plain");
-    if (!tagData) {
-      return;
-    }
-
-    // 解析标签数据（可能是JSON字符串或纯文本）
-    let tagName = tagData;
-    try {
-      const parsed = JSON.parse(tagData);
-      if (parsed.tagName) {
-        tagName = parsed.tagName;
-      }
-    } catch {
-      // 如果解析失败，直接使用原始数据作为标签名
-    }
-
-    const currentDrag = getDragContext();
-    if (currentDrag) {
-      currentDrag.dropped = true;
-    }
-
-    // 使用局部刷新函数替代整个列表的重新渲染
-    void addTagToUp(creatorId, tagName, async () => {
-      await refreshUpTags(tagsEl, creatorId, state, rerender);
-    });
-  });
-}
-
-async function renderUpTagPill(tagId: string, creatorId: string, state: StatsState, rerender: RenderFn): Promise<HTMLSpanElement> {
-  const tag = creatorRepository.getCreator(creatorId)?.tagWeights.find(tw => tw.tagId === tagId);
-  if (!tag) {
-    const pill = document.createElement("span");
-    pill.className = "tag-pill";
-    pill.textContent = tagId;
-    return pill;
-  }
-  
-  const tagData = tagRepository.getTag(tagId);
-  if (!tagData) {
-    const pill = document.createElement("span");
-    pill.className = "tag-pill";
-    pill.textContent = tagId;
-    return pill;
-  }
-  
-  return renderTagPill(tagData, {
-    creatorId,
-    onRemove: async (cid, tagName) => {
-      const tagsEl = document.querySelector(`[data-creator-id="${cid}"] .up-tags`) as HTMLElement;
-      if (tagsEl) {
-        await removeTagFromUp(cid, tagId, async () => {
-          await refreshUpTags(tagsEl, cid, state, rerender);
-        });
-      }
+  state.filters.excludeCategoryTags.forEach(category => {
+    if (category.tagIds.length > 0) {
+      tagExpressions.push({
+        tagId: category.tagIds.length === 1 
+          ? category.tagIds[0] 
+          : category.tagIds,
+        operator: 'NOT'
+      });
     }
   });
+
+  // 如果有标签表达式，添加到条件中
+  if (tagExpressions.length > 0) {
+    (condition as any).tagExpressions = tagExpressions;
+  }
+
+  return condition;
 }
 
 /**
- * 局部刷新UP主的标签区域
+ * 刷新UP列表
  */
-async function refreshUpTags(tagsEl: HTMLElement, creatorId: string, state: StatsState, rerender: RenderFn): Promise<void> {
-  const creator = creatorRepository.getCreator(creatorId);
-  const tagIds = creator?.tagWeights.map(tw => tw.tagId) || [];
-
-  // 清空容器内容，而不是直接设置textContent，以保留事件监听器
-  tagsEl.innerHTML = "";
-
-  if (tagIds.length === 0) {
-    const emptyText = document.createElement("span");
-    emptyText.textContent = "暂无分类";
-    tagsEl.appendChild(emptyText);
-  } else {
-    for (const tagId of tagIds) {
-      const pill = await renderUpTagPill(tagId, creatorId, state, rerender);
-      tagsEl.appendChild(pill);
-    }
-  }
-}
-
 export function refreshUpList(state: StatsState, rerender: RenderFn): void {
   void renderUpList(state, rerender);
   updateToggleLabel(state.showFollowedOnly);
 }
 
+/**
+ * 渲染UP列表
+ */
 export async function renderUpList(state: StatsState, rerender: RenderFn): Promise<void> {
   const container = document.getElementById("up-list");
-  if (!container) {
-    return;
-  }
+  if (!container) return;
 
-  // 从Repository获取过滤后的UP列表
-  const result = await fetchFilteredUpList(state, paginationState.currentPage);
+  // 显示加载状态
+  container.innerHTML = '<div class="loading">加载中...</div>';
 
-  console.log('[renderUpList] 获取到的列表长度:', result.data.length);
+  try {
+    const { creators, total } = await getFilteredCreators(state, paginationState);
+    
+    // 更新分页状态
+    paginationState.totalItems = total;
+    paginationState.totalPages = Math.ceil(total / paginationState.pageSize);
 
-  // 更新分页状态
-  paginationState.totalItems = result.total;
-  paginationState.totalPages = Math.ceil(result.total / result.pageSize);
-
-  if (result.data.length === 0) {
-    console.log('[renderUpList] 列表为空，显示"暂无关注UP"');
+    // 清空容器
     container.innerHTML = "";
-    const item = document.createElement("div");
-    item.className = "list-item";
-    item.textContent = "暂无关注UP";
-    container.appendChild(item);
-    return;
-  }
 
-  // 清空容器
-  container.innerHTML = "";
+    // 渲染UP列表
+    for (const creator of creators) {
+      const creatorElement = document.createElement("div");
+      creatorElement.className = "up-item";
 
-  // 渲染UP列表
-  const fragment = document.createDocumentFragment();
-  for (const up of result.data) {
-    const item = document.createElement("div");
-    item.className = "up-item";
-    item.dataset.creatorId = up.creatorId;
+      // 创建头像元素（暂时不加载头像）
+      const avatarContainer = document.createElement("div");
+      avatarContainer.className = "up-avatar-container";
+      // 暂时不创建头像元素，避免加载错误
+      creatorElement.appendChild(avatarContainer);
 
-    const avatarLink = document.createElement("a");
-    avatarLink.href = buildUserSpaceUrl(up.creatorId);
-    avatarLink.target = "_blank";
-    avatarLink.rel = "noreferrer";
+      // 创建UP主信息元素
+      const creatorInfo = document.createElement("div");
+      creatorInfo.className = "up-info";
 
-    const avatar = document.createElement("img");
-    avatar.className = "up-avatar";
-    avatar.alt = up.name;
+      // 名称和关注状态
+      const nameRow = document.createElement("div");
+      nameRow.className = "up-name-row";
+      
+      const creatorName = document.createElement("div");
+      creatorName.className = "up-name";
+      creatorName.textContent = creator.name;
+      nameRow.appendChild(creatorName);
 
-    // 使用getAvatarBinary方法获取头像，该方法会自动处理本地缓存和远程下载
-    void (async () => {
-      try {
-        const avatarBlob = await creatorRepository.getAvatarBinary(up.creatorId, state.platform);
-        if (avatarBlob) {
-          avatar.src = URL.createObjectURL(avatarBlob);
-        }
-      } catch (error) {
-        console.error(`[up-list] Failed to load avatar for UP: ${up.name}`, error);
+      // 关注状态标签
+      const followBadge = document.createElement("span");
+      followBadge.className = creator.isFollowing ? "up-follow-badge followed" : "up-follow-badge unfollowed";
+      followBadge.textContent = creator.isFollowing ? "已关注" : "未关注";
+      nameRow.appendChild(followBadge);
+
+      creatorInfo.appendChild(nameRow);
+
+      // 简介显示
+      if (creator.description) {
+        const creatorDesc = document.createElement("div");
+        creatorDesc.className = "up-description";
+        creatorDesc.textContent = creator.description.length > 100 
+          ? creator.description.substring(0, 100) + "..." 
+          : creator.description;
+        creatorInfo.appendChild(creatorDesc);
       }
-    })();
 
-    avatarLink.appendChild(avatar);
-
-    // 头像加载失败处理
-    avatar.onerror = async () => {
-      console.warn(`[up-list] Failed to load avatar for UP: ${up.name}`);
-    };
-
-    const info = document.createElement("div");
-    info.className = "up-info";
-
-    const name = document.createElement("a");
-    name.className = "up-name";
-    name.href = buildUserSpaceUrl(up.creatorId);
-    name.target = "_blank";
-    name.rel = "noreferrer";
-    name.textContent = up.name;
-
-    info.appendChild(name);
-
-    // 按需获取UP的标签数据
-    const tagsContainer = document.createElement("div");
-    tagsContainer.className = "up-tags";
-    setupUpTagDropZone(tagsContainer, up.creatorId, state, rerender);
-
-    // 异步加载标签数据
-    void (async () => {
-      const creator = creatorRepository.getCreator(up.creatorId);
-      const tagIds = creator?.tagWeights.map(tw => tw.tagId) || [];
-      // 清空容器内容，而不是直接设置textContent，以保留事件监听器
-      tagsContainer.innerHTML = "";
-      if (tagIds.length === 0) {
-        const emptyText = document.createElement("span");
-        emptyText.textContent = "暂无分类";
-        tagsContainer.appendChild(emptyText);
-      } else {
-        for (const tagId of tagIds) {
-          const pill = await renderUpTagPill(tagId, up.creatorId, state, rerender);
-          tagsContainer.appendChild(pill);
+      // 标签显示
+      if (creator.tagWeights && creator.tagWeights.length > 0) {
+        const tagsContainer = document.createElement("div");
+        tagsContainer.className = "up-tags";
+        
+        // 按权重排序，取前5个标签
+        const sortedTags = [...creator.tagWeights]
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 5);
+        
+        // 获取标签名称
+        const tagIds = sortedTags.map(t => t.tagId);
+        const tagsMap = await getServices().tagRepo.getTags(tagIds);
+        
+        for (const tagWeight of sortedTags) {
+          const tag = tagsMap.get(tagWeight.tagId);
+          const tagName = tag?.name || String(tagWeight.tagId);
+          
+          const tagElement = document.createElement("span");
+          tagElement.className = tagWeight.source === 'user' 
+            ? "tag-pill tag-pill-user" 
+            : "tag-pill tag-pill-auto";
+          tagElement.textContent = `${tagName}${tagWeight.count > 0 ? ` (${tagWeight.count})` : ''}`;
+          
+          // 设置标签颜色
+          tagElement.style.backgroundColor = colorFromTag(tagName);
+          
+          // 添加拖拽属性
+          tagElement.draggable = true;
+          
+          // 拖拽开始事件
+          tagElement.addEventListener('dragstart', (e) => {
+            const context: DragContext = {
+              tagId: tagWeight.tagId,
+              tagName: tagName,
+              originUpMid: creator.creatorId,
+              dropped: false
+            };
+            setDragContext(context);
+            createDragGhost(e, tagName);
+            
+            if (e.dataTransfer) {
+              e.dataTransfer.effectAllowed = 'copy';
+            }
+            
+            tagElement.classList.add('dragging');
+          });
+          
+          // 拖拽结束事件
+          tagElement.addEventListener('dragend', () => {
+            tagElement.classList.remove('dragging');
+            setDragContext(null);
+          });
+          
+          tagsContainer.appendChild(tagElement);
         }
+        
+        creatorInfo.appendChild(tagsContainer);
       }
-    })();
 
-    info.appendChild(tagsContainer);
-    item.appendChild(avatarLink);
-    item.appendChild(info);
-    fragment.appendChild(item);
-  }
+      creatorElement.appendChild(creatorInfo);
+      container.appendChild(creatorElement);
+    }
 
-  container.appendChild(fragment);
-
-  // 渲染分页控件
-  renderPagination(container, result.total, result.page, paginationState.totalPages, rerender);
-
-  // 预加载下一页的头像
-  if (result.hasNext) {
-    void (async () => {
-      try {
-        const nextPageResult = await fetchFilteredUpList(state, paginationState.currentPage + 1);
-        const creatorIds = nextPageResult.data
-          .map(up => up.creatorId)
-          .filter((id): id is string => !!id);
-
-        if (creatorIds.length > 0) {
-          await creatorRepository.getAvatarBinaries(creatorIds, state.platform);
-        }
-      } catch (error) {
-        console.error('[up-list] Failed to preload next page avatars:', error);
-      }
-    })();
+    // 渲染分页控件
+    renderPagination(container, total, paginationState.currentPage, paginationState.totalPages, rerender);
+  } catch (error) {
+    console.error('[up-list] 渲染UP列表失败:', error);
+    container.innerHTML = '<div class="error">加载失败</div>';
   }
 }
 
@@ -354,50 +393,40 @@ function renderPagination(
   totalPages: number,
   rerender: RenderFn
 ): void {
-  // 移除旧的分页控件
-  const oldPagination = container.querySelector('.pagination');
-  if (oldPagination) {
-    oldPagination.remove();
-  }
-
-  if (totalPages <= 1) {
-    return;
-  }
-
-  const pagination = document.createElement('div');
-  pagination.className = 'pagination';
+  const paginationContainer = document.createElement("div");
+  paginationContainer.className = "pagination";
 
   // 上一页按钮
-  const prevBtn = document.createElement('button');
-  prevBtn.className = 'pagination-btn';
-  prevBtn.textContent = '上一页';
+  const prevBtn = document.createElement("button");
+  prevBtn.className = "pagination-btn";
+  prevBtn.textContent = "上一页";
   prevBtn.disabled = currentPage === 0;
-  prevBtn.onclick = () => {
+  prevBtn.addEventListener("click", () => {
     if (currentPage > 0) {
       paginationState.currentPage = currentPage - 1;
       rerender();
     }
-  };
-  pagination.appendChild(prevBtn);
+  });
+  paginationContainer.appendChild(prevBtn);
 
   // 页码信息
-  const pageInfo = document.createElement('span');
-  pageInfo.className = 'pagination-info';
-  pageInfo.textContent = `${currentPage + 1} / ${totalPages}`;
-  pagination.appendChild(pageInfo);
+  const pageInfo = document.createElement("span");
+  pageInfo.className = "pagination-info";
+  pageInfo.textContent = `${currentPage + 1} / ${totalPages || 1}`;
+  paginationContainer.appendChild(pageInfo);
 
   // 下一页按钮
-  const nextBtn = document.createElement('button');
-  nextBtn.className = 'pagination-btn';
-  nextBtn.textContent = '下一页';
+  const nextBtn = document.createElement("button");
+  nextBtn.className = "pagination-btn";
+  nextBtn.textContent = "下一页";
   nextBtn.disabled = currentPage >= totalPages - 1;
-  nextBtn.onclick = () => {
+  nextBtn.addEventListener("click", () => {
     if (currentPage < totalPages - 1) {
       paginationState.currentPage = currentPage + 1;
       rerender();
     }
-  };
-  pagination.appendChild(nextBtn);
+  });
+  paginationContainer.appendChild(nextBtn);
 
-  container.appendChild(pagination);
+  container.appendChild(paginationContainer);
 }

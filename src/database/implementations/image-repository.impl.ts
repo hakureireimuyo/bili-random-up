@@ -1,5 +1,5 @@
 /**
- * ImageRepository（基于IndexedDB的图片仓库实现）
+ * ImageRepositoryImpl（基于IndexedDB的图片仓库实现）
  * 实现图片数据和元数据的分离存储，支持按需加载图片数据
  */
 
@@ -9,7 +9,7 @@ import { DBUtils, STORE_NAMES } from '../indexeddb/index.js';
 import { compressImage, shouldCompress } from '../../utls/image-utils.js';
 import { generateId } from './id-generator.js';
 
-export class ImageRepository {
+export class ImageRepositoryImpl {
 
   /**
    * 创建图像

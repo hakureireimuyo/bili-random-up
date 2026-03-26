@@ -3,25 +3,6 @@
  * 导出所有数据类型定义
  */
 
-// 基础类型
-export type {
-  UP,
-  AppVideo,
-  UPCache,
-  UPFaceDataCacheEntry,
-  VideoCacheEntry,
-  UserInterest,
-  InterestProfile,
-  AppTag,
-  TagLibrary,
-  UPTagWeight,
-  UPTagWeights,
-  UPTagCount,
-  UPTagCache,
-  AppCategory,
-  CategoryLibrary
-} from './app.js';
-
 export type {
   Platform,
   TagSource,
@@ -38,7 +19,6 @@ export type {
 // Creator 类型
 export type {
   Creator,
-  CreatorStats,
   CreatorTagWeight
 } from './creator.js';
 
@@ -58,42 +38,19 @@ export { ImagePurpose } from './image.js';
 
 // Behavior 类型
 export type {
-  WatchEvent,
-  InteractionEvent,
-  SearchEvent,
-  BehaviorSummary
+  WatchEvent
 } from './behavior.js';
 
 // Semantic 类型
 export type {
   Tag,
-  TagAlias,
-  TagEmbedding,
   Category,
   TagStats
 } from './semantic.js';
 
-// Note 类型
-export type {
-  VideoNote,
-  NoteSegment,
-  NoteRelation,
-  KnowledgeEntry
-} from './note.js';
 
 // Collection 类型
 export type {
   Collection,
   CollectionItem
 } from './collection.js';
-
-// Analytics 类型
-export type {
-  InterestScore,
-  InterestNode,
-  InterestHistory,
-  CreatorRank,
-  WatchTimeStats,
-  WatchTimeDistribution,
-  UserInterestProfile
-} from './analytics.js';

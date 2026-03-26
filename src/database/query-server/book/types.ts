@@ -62,5 +62,5 @@ export interface BookQueryResult<T> {
   /** 分页状态 */
   state: BookPageState;
   /** 书的ID */
-  bookId: string;
+  bookId: number;
 }

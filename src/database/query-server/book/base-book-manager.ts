@@ -13,6 +13,7 @@ import type { QueryCondition } from '../query/types.js';
 import type { BookQueryOptions } from './types.js';
 import { DataCache } from '../cache/data-cache.js';
 import { IndexCache } from '../cache/index-cache.js';
+import {generateId} from "../../implementations/id-generator.js"
 
 /**
  * 数据仓库接口
@@ -25,14 +26,14 @@ export interface IDataRepository<T> {
    * 优先从Cache获取，未命中则从Database获取
    * @param id - 全局唯一的ID
    */
-  getById(id: string): Promise<T | null>;
+  getById(id: number): Promise<T | null>;
 
   /**
    * 根据ID列表批量获取数据
    * 优先从Cache获取，未命中的从Database获取
    * @param ids - 全局唯一的ID列表
    */
-  getByIds(ids: string[]): Promise<T[]>;
+  getByIds(ids: number[]): Promise<T[]>;
 
   /**
    * 获取所有数据
@@ -53,7 +54,7 @@ export interface IIndexConverter<T, I> {
   /**
    * 获取数据的唯一标识
    */
-  getId(data: T): string;
+  getId(data: T): number;
 }
 
 /**
@@ -65,7 +66,7 @@ export interface IQueryService<I> {
   /**
    * 根据查询条件获取索引ID列表
    */
-  queryIds(condition: QueryCondition): Promise<string[]>;
+  queryIds(condition: QueryCondition): Promise<number[]>;
 }
 
 /**
@@ -78,7 +79,7 @@ export interface IQueryService<I> {
  * - Book生命周期与页面生命周期一致
  */
 export class BaseBookManager<T, I> {
-  protected books: Map<string, Book<T>> = new Map();
+  protected books: Map<number, Book<T>> = new Map();
   protected dataCache: DataCache<T>;
   protected indexCache: IndexCache<I>;
   protected repository: IDataRepository<T>;
@@ -110,7 +111,7 @@ export class BaseBookManager<T, I> {
     const pageSize = options.pageSize || 20;
 
     // 生成书ID
-    const bookId = this.generateBookId(queryCondition);
+    const bookId =  generateId();
 
     // 通过QueryService获取结果ID列表
     const resultIds = await this.queryService.queryIds(queryCondition);
@@ -133,14 +134,14 @@ export class BaseBookManager<T, I> {
   /**
    * 获取书
    */
-  getBook(bookId: string): Book<T> | undefined {
+  getBook(bookId: number): Book<T> | undefined {
     return this.books.get(bookId);
   }
 
   /**
    * 删除书
    */
-  deleteBook(bookId: string): boolean {
+  deleteBook(bookId: number): boolean {
     return this.books.delete(bookId);
   }
 
@@ -169,13 +170,5 @@ export class BaseBookManager<T, I> {
    */
   getIndexCache(): IndexCache<I> {
     return this.indexCache;
-  }
-
-  /**
-   * 生成书ID
-   */
-  protected generateBookId(condition: QueryCondition): string {
-    // 子类可以重写此方法以实现自定义的书ID生成逻辑
-    return JSON.stringify(condition);
   }
 }

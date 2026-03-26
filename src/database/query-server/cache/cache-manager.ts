@@ -8,6 +8,9 @@ import { DataCache } from './data-cache.js';
 import { TagCache } from './tag-cache.js';
 import type { CreatorIndex } from './types.js';
 import type { VideoIndex } from './types.js';
+import type { Creator } from '../../types/creator.js';
+import type { Video } from '../../types/video.js';
+import type { Tag } from '../../types/semantic.js';
 
 /**
  * 全局缓存管理器类
@@ -19,10 +22,16 @@ export class CacheManager {
   // 创作者索引缓存
   private indexCache: IndexCache<CreatorIndex>;
 
-  // 数据缓存（存储完整数据）
-  private dataCache: DataCache<unknown>;
+  // 创作者数据缓存
+  private creatorDataCache: DataCache<Creator>;
 
-  // 标签缓存（使用SortedArray实现）
+  // 视频数据缓存
+  private videoDataCache: DataCache<Video>;
+
+  // 标签数据缓存
+  private tagDataCache: DataCache<Tag>;
+
+  // 标签到创作者和视频id映射缓存（使用SortedArray实现）
   private tagCache: TagCache;
 
   // 视频索引缓存
@@ -31,8 +40,18 @@ export class CacheManager {
   private constructor() {
     // 初始化所有缓存单例
     this.indexCache = new IndexCache<CreatorIndex>();
-    this.dataCache = new DataCache<any>({
-      maxSize: 2000,
+    this.creatorDataCache = new DataCache<Creator>({
+      maxSize: 500,
+      maxAge: 3600000,
+      cleanupRatio: 0.2
+    });
+    this.videoDataCache = new DataCache<Video>({
+      maxSize: 1000,
+      maxAge: 3600000,
+      cleanupRatio: 0.2
+    });
+    this.tagDataCache = new DataCache<Tag>({
+      maxSize: 200,
       maxAge: 3600000,
       cleanupRatio: 0.2
     });
@@ -58,10 +77,24 @@ export class CacheManager {
   }
 
   /**
-   * 获取数据缓存
+   * 获取创作者数据缓存
    */
-  getDataCache<T>(): DataCache<T> {
-    return this.dataCache as DataCache<T>;
+  getCreatorDataCache(): DataCache<Creator> {
+    return this.creatorDataCache;
+  }
+
+  /**
+   * 获取视频数据缓存
+   */
+  getVideoDataCache(): DataCache<Video> {
+    return this.videoDataCache;
+  }
+
+  /**
+   * 获取标签数据缓存
+   */
+  getTagDataCache(): DataCache<Tag> {
+    return this.tagDataCache;
   }
 
   /**
@@ -83,7 +116,9 @@ export class CacheManager {
    */
   clearAll(): void {
     this.indexCache.clear();
-    this.dataCache.clear();
+    this.creatorDataCache.clear();
+    this.videoDataCache.clear();
+    this.tagDataCache.clear();
     this.tagCache.clear();
     this.videoIndexCache.clear();
   }
@@ -93,7 +128,9 @@ export class CacheManager {
    */
   getStats(): {
     indexCache: { size: number };
-    dataCache: ReturnType<DataCache<unknown>['getStats']>;
+    creatorDataCache: ReturnType<DataCache<Creator>['getStats']>;
+    videoDataCache: ReturnType<DataCache<Video>['getStats']>;
+    tagDataCache: ReturnType<DataCache<Tag>['getStats']>;
     tagCache: ReturnType<TagCache['getStats']>;
     videoIndexCache: { size: number };
   } {
@@ -101,7 +138,9 @@ export class CacheManager {
       indexCache: {
         size: this.indexCache.size()
       },
-      dataCache: this.dataCache.getStats(),
+      creatorDataCache: this.creatorDataCache.getStats(),
+      videoDataCache: this.videoDataCache.getStats(),
+      tagDataCache: this.tagDataCache.getStats(),
       tagCache: this.tagCache.getStats(),
       videoIndexCache: {
         size: this.videoIndexCache.size()

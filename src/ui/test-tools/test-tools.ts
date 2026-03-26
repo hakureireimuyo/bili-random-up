@@ -1,554 +1,502 @@
-import { VideoRepository } from "../../database/implementations/video-repository.impl.js";
-import { CollectionRepository } from "../../database/implementations/collection-repository.impl.js";
-import { CollectionItemRepository } from "../../database/implementations/collection-item-repository.impl.js";
-import { TagRepository } from "../../database/implementations/tag-repository.impl.js";
-import { ImageRepository } from "../../database/implementations/image-repository.impl.js";
-import { CreatorRepository } from "../../database/implementations/creator-repository.impl.js";
-import { Platform } from "../../database/types/base.js";
-import { getVideoTagsDetail } from "../../api/bili-api.js";
-import { TagSource } from "../../database/types/base.js";
-import { ImagePurpose } from "../../database/types/image.js";
-import { dataUrlToBlob } from "../../utls/image-utils.js";
-
-// 状态管理
-let isCompressRunning = false;
-let shouldStopCompress = false;
-let isFetchTagsRunning = false;
-let shouldStopFetchTags = false;
-let isMigrateImagesRunning = false;
-let shouldStopMigrateImages = false;
-
-// DOM 元素
-const platformSelect = document.getElementById("platform") as HTMLSelectElement;
-const startCompressBtn = document.getElementById("start-compress-btn") as HTMLButtonElement;
-const stopCompressBtn = document.getElementById("stop-compress-btn") as HTMLButtonElement;
-const compressStatus = document.getElementById("compress-status") as HTMLSpanElement;
-const compressPercent = document.getElementById("compress-percent") as HTMLSpanElement;
-const processedCount = document.getElementById("processed-count") as HTMLSpanElement;
-const totalCount = document.getElementById("total-count") as HTMLSpanElement;
-const compressMessage = document.getElementById("compress-message") as HTMLSpanElement;
-const updateStatsBtn = document.getElementById("update-stats-btn") as HTMLButtonElement;
-const statsMessage = document.getElementById("stats-message") as HTMLSpanElement;
-const fetchMissingTagsBtn = document.getElementById("fetch-missing-tags-btn") as HTMLButtonElement;
-const tagsStatus = document.getElementById("tags-status") as HTMLSpanElement;
-const tagsPercent = document.getElementById("tags-percent") as HTMLSpanElement;
-const tagsProcessedCount = document.getElementById("tags-processed-count") as HTMLSpanElement;
-const tagsTotalCount = document.getElementById("tags-total-count") as HTMLSpanElement;
-const tagsMessage = document.getElementById("tags-message") as HTMLSpanElement;
-const migrateImagesBtn = document.getElementById("migrate-images-btn") as HTMLButtonElement;
-const migrateType = document.getElementById("migrate-type") as HTMLSelectElement;
-const migrateStatus = document.getElementById("migrate-status") as HTMLSpanElement;
-const migratePercent = document.getElementById("migrate-percent") as HTMLSpanElement;
-const migrateProcessedCount = document.getElementById("migrate-processed-count") as HTMLSpanElement;
-const migrateTotalCount = document.getElementById("migrate-total-count") as HTMLSpanElement;
-const migrateMessage = document.getElementById("migrate-message") as HTMLSpanElement;
-
 /**
- * 设置消息
+ * 测试工具页面脚本
+ * 实现各种测试工具功能
  */
-function setMessage(element: HTMLSpanElement, text: string): void {
-  element.textContent = text;
-}
 
-/**
- * 更新压缩进度
- */
-function updateCompressProgress(done: number, total: number): void {
-  const percent = total > 0 ? Math.round((done / total) * 100) : 0;
+import { VideoRepositoryImpl } from '../../database/implementations/video-repository.impl.js';
+import { CreatorRepositoryImpl } from '../../database/implementations/creator-repository.impl.js';
+import { CollectionRepositoryImpl } from '../../database/implementations/collection-repository.impl.js';
+import { TagRepositoryImpl } from '../../database/implementations/tag-repository.impl.js';
+import { CollectionItemRepositoryImpl } from '../../database/implementations/collection-item-repository.impl.js';
+import { Platform, TagSource } from '../../database/types/base.js';
+import { generateId } from '../../database/implementations/id-generator.js';
 
-  compressPercent.textContent = `${percent}%`;
-  processedCount.textContent = String(done);
-  totalCount.textContent = String(total);
+// 随机数据生成器
+class RandomDataGenerator {
+  // 随机整数
+  static randomInt(min: number, max: number): number {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+  }
 
-  if (done === total && total > 0) {
-    compressStatus.textContent = "完成！";
-    setMessage(compressMessage, "压缩任务已完成");
-  } else {
-    compressStatus.textContent = `处理中... (${done}/${total})`;
+  // 随机浮点数
+  static randomFloat(min: number, max: number): number {
+    return Math.random() * (max - min) + min;
+  }
+
+  // 随机布尔值
+  static randomBoolean(): boolean {
+    return Math.random() < 0.5;
+  }
+
+  // 从数组中随机选择一个元素
+  static randomChoice<T>(array: T[]): T {
+    return array[Math.floor(Math.random() * array.length)];
+  }
+
+  // 随机字符串
+  static randomString(length: number): string {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let result = '';
+    for (let i = 0; i < length; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
+  }
+
+  // 随机日期
+  static randomDate(start: Date, end: Date): number {
+    return new Date(start.getTime() + Math.random() * (end.getTime() - start.getTime())).getTime();
+  }
+
+  // 随机中文字符串
+  static randomChinese(length: number): string {
+    const chars = '的一是在不了有和人这中大为上个国我以要他时来用们生到作地于出就分对成会可主发年动同工也能下过子说产种面而方后多定行学法所民得经十三之进着等部度家电力里如水化高自二理起小物现实加量都两体制机当使点从业本去把性好应开它合还因由其些然前外天政四日那社义事平形相全表间样与关各重新线内数正心反你明看原又么利比或但质气第向道命此变条只没结解问意建月公无系军很情者最立代想已通并提直题党程展五果料象员革位入常文总次品式活设及管特件长求老头基资边流路级少图山统接知较将组见计别她手角期根论运农指几九区强放决西被干做必战先回则任取据处队南给色光门即保治北造百规热领七海口东导器压志世金增争济阶油思术极交受联什认六共权收证改张群完确支感科维划选写画候状识病象数读独包今觉';
+    let result = '';
+    for (let i = 0; i < length; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
+  }
+
+  // 随机生成BV号
+  static randomBV(): string {
+    const chars = 'fZodR9XQDSUm21yCkr6zBqiveYah8bt4xsWpHnJE7jL5VG3guMTKNPAwcF';
+    const result = ['B', 'V', '1', '', '', '4', '', '1', '', '7', ''];
+    const positions = [2, 4, 6, 8, 10];
+    positions.forEach(pos => {
+      result[pos] = chars[Math.floor(Math.random() * chars.length)];
+    });
+    return result.join('');
+  }
+
+  // 随机生成标题
+  static randomTitle(): string {
+    const prefixes = ['如何', '为什么', '什么是', '关于', '深入理解', '快速入门', '全面解析', '实战指南'];
+    const topics = ['编程', '人工智能', '数据分析', '前端开发', '后端开发', '机器学习', '深度学习', '云计算', '网络安全', '移动开发'];
+    const suffixes = ['教程', '入门', '进阶', '实战', '技巧', '原理', '应用', '案例', '实践', '经验'];
+
+    return `${this.randomChoice(prefixes)}${this.randomChoice(topics)}${this.randomChoice(suffixes)}`;
+  }
+
+  // 随机生成描述
+  static randomDescription(): string {
+    const sentences = [
+      '本视频将详细介绍相关概念和实现方法。',
+      '通过实际案例演示，帮助观众快速掌握核心要点。',
+      '适合初学者入门，也适合有一定基础的开发者进阶学习。',
+      '内容涵盖理论知识和实际应用，注重实战经验分享。',
+      '结合最新技术趋势，提供实用的解决方案。'
+    ];
+
+    const count = this.randomInt(1, 3);
+    let result = '';
+    for (let i = 0; i < count; i++) {
+      result += this.randomChoice(sentences);
+      if (i < count - 1) result += ' ';
+    }
+    return result;
   }
 }
 
-/**
- * 更新图像迁移进度
- */
-function updateMigrateProgress(done: number, total: number): void {
-  const percent = total > 0 ? Math.round((done / total) * 100) : 0;
+// 测试数据生成器
+class TestDataGenerator {
+  private videoRepository: VideoRepositoryImpl;
+  private creatorRepository: CreatorRepositoryImpl;
+  private collectionRepository: CollectionRepositoryImpl;
+  private tagRepository: TagRepositoryImpl;
+  private collectionItemRepository: CollectionItemRepositoryImpl;
 
-  migratePercent.textContent = `${percent}%`;
-  migrateProcessedCount.textContent = String(done);
-  migrateTotalCount.textContent = String(total);
+  private existingCreators: any[] = [];
+  private existingTags: any[] = [];
+  private existingCollections: any[] = [];
 
-  if (done === total && total > 0) {
-    migrateStatus.textContent = "完成！";
-    setMessage(migrateMessage, "图像迁移任务已完成");
-  } else {
-    migrateStatus.textContent = `处理中... (${done}/${total})`;
-  }
-}
-
-/**
- * 更新标签获取进度
- */
-function updateTagsProgress(done: number, total: number): void {
-  const percent = total > 0 ? Math.round((done / total) * 100) : 0;
-
-  tagsPercent.textContent = `${percent}%`;
-  tagsProcessedCount.textContent = String(done);
-  tagsTotalCount.textContent = String(total);
-
-  if (done === total && total > 0) {
-    tagsStatus.textContent = "完成！";
-    setMessage(tagsMessage, "标签获取任务已完成");
-  } else {
-    tagsStatus.textContent = `处理中... (${done}/${total})`;
-  }
-}
-
-/**
- * 开始压缩任务
- */
-async function startCompress(): Promise<void> {
-  console.log("[TestTools] Start compress button clicked");
-  if (isCompressRunning) {
-    console.log("[TestTools] Compression already running, ignoring request");
-    return;
+  constructor() {
+    this.videoRepository = new VideoRepositoryImpl();
+    this.creatorRepository = new CreatorRepositoryImpl();
+    this.collectionRepository = new CollectionRepositoryImpl();
+    this.tagRepository = new TagRepositoryImpl();
+    this.collectionItemRepository = new CollectionItemRepositoryImpl();
   }
 
-  console.log("[TestTools] Starting compression task");
-  isCompressRunning = true;
-  shouldStopCompress = false;
+  // 初始化现有数据
+  private async initializeExistingData() {
+    this.existingCreators = await this.creatorRepository.getAll();
+    const tagsResult = await this.tagRepository.getAllTags();
+    this.existingTags = tagsResult.items;
+    this.existingCollections = await this.collectionRepository.getAllCollections();
+  }
 
-  // 更新按钮状态
-  startCompressBtn.disabled = true;
-  stopCompressBtn.disabled = false;
+  // 为现有创作者添加标签
+  async addTagsToExistingCreators(onProgress?: (current: number, total: number) => void): Promise<void> {
+    console.log(`[TestDataGenerator] 开始为现有创作者添加标签`);
 
-  // 重置进度显示
-  compressPercent.textContent = "0%";
-  processedCount.textContent = "0";
-  totalCount.textContent = "0";
-  compressStatus.textContent = "准备中...";
-  setMessage(compressMessage, "正在扫描数据库...");
+    // 初始化现有数据
+    await this.initializeExistingData();
 
-  try {
-    const platform = platformSelect.value as Platform;
-    console.log(`[TestTools] Selected platform: ${platform}`);
-    const videoRepository = new VideoRepository();
+    if (this.existingTags.length === 0) {
+      console.warn('[TestDataGenerator] 没有可用的标签，请先生成标签');
+      throw new Error('没有可用的标签，请先生成标签');
+    }
 
-    // 开始压缩任务
-    console.log("[TestTools] Calling compressAllVideoPictures");
-    await videoRepository.compressAllVideoPictures(platform, (done, total) => {
-      console.log(`[TestTools] Progress update: ${done}/${total}`);
-      if (shouldStopCompress) {
-        compressStatus.textContent = "已停止";
-        setMessage(compressMessage, "压缩任务已停止");
-        return;
+    const creators = this.existingCreators;
+    const total = creators.length;
+
+    for (let i = 0; i < total; i++) {
+      const creator = creators[i];
+
+      // 如果创作者已有标签，跳过
+      if (creator.tagWeights && creator.tagWeights.length > 0) {
+        console.log(`[TestDataGenerator] 创作者 ${creator.name} 已有标签，跳过`);
+        continue;
       }
-      updateCompressProgress(done, total);
+
+      // 为创作者添加随机标签（1-3个）
+      const tagCount = RandomDataGenerator.randomInt(1, 3);
+      for (let j = 0; j < tagCount && this.existingTags.length > 0; j++) {
+        const tag = RandomDataGenerator.randomChoice(this.existingTags);
+        try {
+          await this.creatorRepository.addTag(creator.creatorId, tag);
+        } catch (error) {
+          console.error(`[TestDataGenerator] 为创作者 ${creator.creatorId} 添加标签失败:`, error);
+        }
+      }
+
+      if (i % 10 === 0) {
+        console.log(`[TestDataGenerator] 已处理 ${i + 1}/${total} 个创作者`);
+      }
+
+      if (onProgress) {
+        onProgress(i + 1, total);
+      }
+    }
+
+    // 刷新现有创作者列表
+    console.log(`[TestDataGenerator] 为现有创作者添加标签完成`);
+    this.existingCreators = await this.creatorRepository.getAll();
+  }
+
+  // 生成随机创作者
+  async generateCreators(count: number, onProgress?: (current: number, total: number) => void): Promise<void> {
+    console.log(`[TestDataGenerator] 开始生成 ${count} 个创作者`);
+    const startDate = new Date('2020-01-01');
+    const endDate = new Date();
+
+    for (let i = 0; i < count; i++) {
+      const creatorId = generateId();
+      const creator = {
+        creatorId,
+        platform: RandomDataGenerator.randomChoice([Platform.BILIBILI, Platform.YOUTUBE]),
+        name: RandomDataGenerator.randomChinese(RandomDataGenerator.randomInt(2, 8)),
+        avatar: generateId(), // 简化处理，只生成ID
+        avatarUrl: `https://example.com/avatar/${RandomDataGenerator.randomString(10)}.jpg`,
+        isLogout: RandomDataGenerator.randomInt(0, 1),
+        description: RandomDataGenerator.randomChinese(RandomDataGenerator.randomInt(10, 50)),
+        createdAt: RandomDataGenerator.randomDate(startDate, endDate),
+        followTime: RandomDataGenerator.randomDate(startDate, endDate),
+        isFollowing: RandomDataGenerator.randomInt(0, 1),
+        tagWeights: []
+      };
+
+      await this.creatorRepository.upsertCreator(creator);
+
+      // 为创作者添加随机标签（1-3个）
+      const tagCount = RandomDataGenerator.randomInt(1, 3);
+      for (let j = 0; j < tagCount && this.existingTags.length > 0; j++) {
+        const tag = RandomDataGenerator.randomChoice(this.existingTags);
+        try {
+          await this.creatorRepository.addTag(creatorId, tag);
+        } catch (error) {
+          console.error(`[TestDataGenerator] 为创作者 ${creatorId} 添加标签失败:`, error);
+        }
+      }
+
+      if (i % 10 === 0) {
+        console.log(`[TestDataGenerator] 已生成 ${i + 1}/${count} 个创作者`);
+      }
+
+      if (onProgress) {
+        onProgress(i + 1, count);
+      }
+    }
+
+    // 刷新现有创作者列表
+    console.log(`[TestDataGenerator] 创作者生成完成，当前共有 ${this.existingCreators.length} 个创作者`);
+    this.existingCreators = await this.creatorRepository.getAll();
+  }
+
+  // 生成随机标签
+  async generateTags(count: number, onProgress?: (current: number, total: number) => void): Promise<void> {
+    console.log(`[TestDataGenerator] 开始生成 ${count} 个标签`);
+    const tagNames = [
+      '编程', '人工智能', '数据分析', '前端开发', '后端开发',
+      '机器学习', '深度学习', '云计算', '网络安全', '移动开发',
+      '数据库', '算法', '操作系统', '网络编程', '软件工程',
+      '游戏开发', 'UI设计', '产品管理', '项目管理', '测试'
+    ];
+
+    // 获取已存在的标签名称
+    const existingTagNames = new Set(this.existingTags.map(tag => tag.name));
+
+    for (let i = 0; i < count; i++) {
+      let name: string;
+      let attempts = 0;
+      const maxAttempts = 100;
+
+      // 尝试生成唯一的标签名称
+      do {
+        name = RandomDataGenerator.randomChoice(tagNames);
+        // 如果名称已存在，添加随机后缀
+        if (existingTagNames.has(name)) {
+          name = `${name}_${RandomDataGenerator.randomString(4)}`;
+        }
+        attempts++;
+      } while (existingTagNames.has(name) && attempts < maxAttempts);
+
+      const source = RandomDataGenerator.randomChoice([TagSource.USER, TagSource.SYSTEM]);
+      await this.tagRepository.createTag(name, source);
+
+      // 添加到已存在名称集合中
+      existingTagNames.add(name);
+
+      if (i % 10 === 0) {
+        console.log(`[TestDataGenerator] 已生成 ${i + 1}/${count} 个标签`);
+      }
+
+      if (onProgress) {
+        onProgress(i + 1, count);
+      }
+    }
+
+    // 刷新现有标签列表
+    const tagsResult = await this.tagRepository.getAllTags();
+    this.existingTags = tagsResult.items;
+    console.log(`[TestDataGenerator] 标签生成完成，当前共有 ${this.existingTags.length} 个标签`);
+  }
+
+  // 生成随机视频
+  async generateVideos(count: number, onProgress?: (current: number, total: number) => void): Promise<void> {
+    console.log(`[TestDataGenerator] 开始生成 ${count} 个视频`);
+    const startDate = new Date('2020-01-01');
+    const endDate = new Date();
+
+    for (let i = 0; i < count; i++) {
+      const creator = this.existingCreators.length > 0 
+        ? RandomDataGenerator.randomChoice(this.existingCreators)
+        : { creatorId: generateId(), platform: Platform.BILIBILI };
+
+      // 随机选择1-3个标签
+      const tagCount = RandomDataGenerator.randomInt(1, 3);
+      const tags: number[] = [];
+      for (let j = 0; j < tagCount && this.existingTags.length > 0; j++) {
+        const tag = RandomDataGenerator.randomChoice(this.existingTags);
+        if (!tags.includes(tag.tagId)) {
+          tags.push(tag.tagId);
+        }
+      }
+
+      const video = {
+        bv: RandomDataGenerator.randomBV(),
+        platform: creator.platform,
+        creatorId: creator.creatorId,
+        title: RandomDataGenerator.randomTitle(),
+        description: RandomDataGenerator.randomDescription(),
+        duration: RandomDataGenerator.randomInt(60, 3600),
+        publishTime: RandomDataGenerator.randomDate(startDate, endDate),
+        tags,
+        coverUrl: `https://example.com/cover/${RandomDataGenerator.randomString(10)}.jpg`,
+        isInvalid: RandomDataGenerator.randomBoolean()
+      };
+
+      await this.videoRepository.createVideo(video);
+
+      if (i % 10 === 0) {
+        console.log(`[TestDataGenerator] 已生成 ${i + 1}/${count} 个视频`);
+      }
+
+      if (onProgress) {
+        onProgress(i + 1, count);
+      }
+    }
+    console.log(`[TestDataGenerator] 视频生成完成`);
+  }
+
+  // 生成随机收藏夹
+  async generateCollections(count: number, onProgress?: (current: number, total: number) => void): Promise<void> {
+    console.log(`[TestDataGenerator] 开始生成 ${count} 个收藏夹`);
+    const startDate = new Date('2020-01-01');
+    const endDate = new Date();
+    const collectionNames = [
+      '我的收藏', '学习资料', '技术分享', '娱乐视频', '音乐收藏',
+      '游戏视频', '美食教程', '旅行记录', '健身教程', '编程学习'
+    ];
+
+    // 获取已存在的收藏夹名称
+    const existingCollectionNames = new Set(this.existingCollections.map(col => col.name));
+
+    for (let i = 0; i < count; i++) {
+      let name: string;
+      let attempts = 0;
+      const maxAttempts = 100;
+
+      // 尝试生成唯一的收藏夹名称
+      do {
+        name = RandomDataGenerator.randomChoice(collectionNames);
+        // 如果名称已存在，添加随机后缀
+        if (existingCollectionNames.has(name)) {
+          name = `${name}_${RandomDataGenerator.randomString(4)}`;
+        }
+        attempts++;
+      } while (existingCollectionNames.has(name) && attempts < maxAttempts);
+
+      const collection = {
+        platform: RandomDataGenerator.randomChoice([Platform.BILIBILI, Platform.YOUTUBE]),
+        name: name,
+        description: RandomDataGenerator.randomChinese(RandomDataGenerator.randomInt(10, 30)),
+        createdAt: RandomDataGenerator.randomDate(startDate, endDate),
+        lastUpdate: RandomDataGenerator.randomDate(startDate, endDate),
+        isPublic: RandomDataGenerator.randomBoolean(),
+        sortOrder: RandomDataGenerator.randomChoice(['default', 'time', 'duration'] as const),
+        type: RandomDataGenerator.randomChoice(['user', 'subscription'] as const),
+        videoCount: 0,
+        lastAddedAt: 0
+      };
+
+      await this.collectionRepository.createCollection(collection);
+
+      // 添加到已存在名称集合中
+      existingCollectionNames.add(name);
+
+      if (i % 10 === 0) {
+        console.log(`[TestDataGenerator] 已生成 ${i + 1}/${count} 个收藏夹`);
+      }
+
+      if (onProgress) {
+        onProgress(i + 1, count);
+      }
+    }
+
+    // 刷新现有收藏夹列表
+    console.log(`[TestDataGenerator] 收藏夹生成完成，当前共有 ${this.existingCollections.length} 个收藏夹`);
+    this.existingCollections = await this.collectionRepository.getAllCollections();
+  }
+
+  // 生成全部测试数据
+  async generateAll(count: number, onProgress?: (type: string, current: number, total: number) => void): Promise<void> {
+    console.log('[TestDataGenerator] 开始生成全部测试数据');
+    await this.initializeExistingData();
+
+    // 生成创作者
+    await this.generateCreators(count, (current, total) => {
+      if (onProgress) onProgress('创作者', current, total);
     });
 
-    if (!shouldStopCompress) {
-      console.log("[TestTools] Compression completed successfully");
-      setMessage(compressMessage, "压缩任务已完成");
-    }
-  } catch (error) {
-    console.error("[TestTools] Compression error:", error);
-    setMessage(compressMessage, `错误: ${error instanceof Error ? error.message : String(error)}`);
-  } finally {
-    console.log("[TestTools] Cleaning up compression task");
-    isCompressRunning = false;
-    startCompressBtn.disabled = false;
-    stopCompressBtn.disabled = true;
+    // 生成标签
+    await this.generateTags(count, (current, total) => {
+      if (onProgress) onProgress('标签', current, total);
+    });
+
+    // 生成视频
+    await this.generateVideos(count, (current, total) => {
+      if (onProgress) onProgress('视频', current, total);
+    });
+
+    // 生成收藏夹
+    await this.generateCollections(count, (current, total) => {
+      if (onProgress) onProgress('收藏夹', current, total);
+    });
+    
+    console.log('[TestDataGenerator] 全部测试数据生成完成');
   }
 }
 
-/**
- * 停止压缩任务
- */
-function stopCompress(): void {
-  if (!isCompressRunning) return;
-  shouldStopCompress = true;
-  compressStatus.textContent = "正在停止...";
-}
+// 初始化页面
+document.addEventListener('DOMContentLoaded', async () => {
+  const testDataGenerator = new TestDataGenerator();
 
-/**
- * 更新收藏夹统计
- */
-async function updateCollectionStats(): Promise<void> {
-  if (isCompressRunning) {
-    setMessage(statsMessage, "请先停止当前任务");
-    return;
-  }
+  // 获取UI元素
+  const generateTestDataBtn = document.getElementById('generate-test-data-btn') as HTMLButtonElement;
+  const testDataTypeSelect = document.getElementById('test-data-type') as HTMLSelectElement;
+  const testDataCountInput = document.getElementById('test-data-count') as HTMLInputElement;
+  const testDataStatus = document.getElementById('test-data-status') as HTMLSpanElement;
+  const testDataPercent = document.getElementById('test-data-percent') as HTMLSpanElement;
+  const testDataProcessedCount = document.getElementById('test-data-processed-count') as HTMLSpanElement;
+  const testDataTotalCount = document.getElementById('test-data-total-count') as HTMLSpanElement;
+  const testDataMessage = document.getElementById('test-data-message') as HTMLSpanElement;
 
-  try {
-    setMessage(statsMessage, "正在更新收藏夹统计...");
-    updateStatsBtn.disabled = true;
+  // 生成测试数据按钮点击事件
+  generateTestDataBtn.addEventListener('click', async () => {
+    const dataType = testDataTypeSelect.value;
+    const count = parseInt(testDataCountInput.value, 10);
 
-    const platform = platformSelect.value as Platform;
-    const collectionRepository = new CollectionRepository();
-    const collectionItemRepository = new CollectionItemRepository();
+    // 禁用按钮
+    generateTestDataBtn.disabled = true;
+    testDataTypeSelect.disabled = true;
+    testDataCountInput.disabled = true;
 
-    // 获取所有收藏夹
-    const collections = await collectionRepository.getAllCollections(platform);
+    // 更新UI状态
+    testDataStatus.textContent = '生成中...';
+    testDataPercent.textContent = '0%';
+    testDataProcessedCount.textContent = '0';
+    testDataTotalCount.textContent = count.toString();
+    testDataMessage.textContent = '';
 
-    // 更新每个收藏夹的统计信息
-    let updatedCount = 0;
-    for (const collection of collections) {
-      try {
-        // 获取收藏夹的实际视频数量
-        const actualCount = await collectionItemRepository.countCollectionItems(collection.collectionId);
+    try {
+      const updateProgress = (current: number, total: number) => {
+        const percent = Math.round((current / total) * 100);
+        testDataPercent.textContent = `${percent}%`;
+        testDataProcessedCount.textContent = current.toString();
+      };
 
-        // 更新收藏夹的 videoCount
-        await collectionRepository.updateCollection(collection.collectionId, {
-          videoCount: actualCount
-        });
-
-        updatedCount++;
-      } catch (error) {
-        console.error(`[UpdateStats] Error updating stats for collection ${collection.collectionId}:`, error);
-      }
-    }
-
-    setMessage(statsMessage, `已更新 ${updatedCount} 个收藏夹的统计信息`);
-  } catch (error) {
-    console.error("[UpdateStats] Error:", error);
-    setMessage(statsMessage, `错误: ${error instanceof Error ? error.message : String(error)}`);
-  } finally {
-    updateStatsBtn.disabled = false;
-  }
-}
-
-/**
- * 重新获取收藏视频标签
- */
-async function fetchMissingTags(): Promise<void> {
-  if (isFetchTagsRunning || isCompressRunning) {
-    setMessage(tagsMessage, "请先停止当前任务");
-    return;
-  }
-
-  isFetchTagsRunning = true;
-  shouldStopFetchTags = false;
-
-  // 更新按钮状态
-  fetchMissingTagsBtn.disabled = true;
-
-  // 重置进度显示
-  tagsPercent.textContent = "0%";
-  tagsProcessedCount.textContent = "0";
-  tagsTotalCount.textContent = "0";
-  tagsStatus.textContent = "准备中...";
-  setMessage(tagsMessage, "正在扫描收藏视频...");
-
-  try {
-    const platform = platformSelect.value as Platform;
-    const videoRepository = new VideoRepository();
-    const tagRepository = new TagRepository();
-    const collectionItemRepository = new CollectionItemRepository();
-    const collectionRepository = new CollectionRepository();
-
-    // 获取所有收藏夹
-    const collections = await collectionRepository.getAllCollections(platform);
-
-    // 收集所有收藏视频的ID
-    const videoIds = new Set<string>();
-    for (const collection of collections) {
-      const items = await collectionItemRepository.getCollectionVideos(collection.collectionId, { page: 0, pageSize: 100000 });
-      for (const item of items.items) {
-        videoIds.add(item.videoId);
-      }
-    }
-
-    const totalVideos = videoIds.size;
-    let processedCount = 0;
-    let successCount = 0;
-    let failCount = 0;
-
-    setMessage(tagsMessage, `找到 ${totalVideos} 个收藏视频，开始获取标签...`);
-    tagsTotalCount.textContent = String(totalVideos);
-
-    // 遍历每个视频，重新获取标签
-    for (const videoId of videoIds) {
-      if (shouldStopFetchTags) {
-        tagsStatus.textContent = "已停止";
-        setMessage(tagsMessage, "标签获取任务已停止");
-        break;
-      }
-
-      try {
-        // 获取视频信息
-        const video = await videoRepository.getVideo(videoId, platform);
-        if (!video) {
-          console.warn(`[FetchTags] Video not found: ${videoId}`);
-          processedCount++;
-          updateTagsProgress(processedCount, totalVideos);
-          continue;
-        }
-
-        // 从B站API获取标签详情
-        const videoTags = await getVideoTagsDetail(videoId);
-
-        // 处理每个标签
-        const tagIds: string[] = [];
-        for (const videoTag of videoTags) {
-          // 使用B站API返回的tag_id作为标签ID
-          const tagId = String(videoTag.tag_id);
-
-          // 检查标签是否已存在
-          let existingTag = await tagRepository.getTag(tagId);
-
-          if (!existingTag) {
-            // 创建新标签，使用B站返回的tag_id
-            await tagRepository.createTagWithId({
-              tagId,
-              name: videoTag.tag_name,
-              source: TagSource.SYSTEM,
-              createdAt: Date.now()
-            });
-          }
-          tagIds.push(tagId);
-        }
-
-        // 更新视频的标签
-        if (tagIds.length > 0) {
-          await videoRepository.updateVideoTags(videoId, platform, tagIds);
-          successCount++;
-        }
-
-        processedCount++;
-        updateTagsProgress(processedCount, totalVideos);
-
-        // 添加延迟避免请求过于频繁
-        await new Promise(resolve => setTimeout(resolve, 200));
-
-      } catch (error) {
-        console.error(`[FetchTags] Error processing video ${videoId}:`, error);
-        failCount++;
-        processedCount++;
-        updateTagsProgress(processedCount, totalVideos);
-      }
-    }
-
-    if (!shouldStopFetchTags) {
-      setMessage(tagsMessage, `完成！成功: ${successCount}, 失败: ${failCount}`);
-    }
-  } catch (error) {
-    console.error("[FetchTags] Error:", error);
-    setMessage(tagsMessage, `错误: ${error instanceof Error ? error.message : String(error)}`);
-  } finally {
-    isFetchTagsRunning = false;
-    fetchMissingTagsBtn.disabled = false;
-  }
-}
-
-/**
- * 初始化页面
- */
-/**
- * 判断字符串是否为有效的base64图像数据
- */
-function isBase64Image(str: string): boolean {
-  // 检查是否包含base64前缀
-  if (!str.includes("data:image/") || !str.includes("base64,")) {
-    return false;
-  }
-  
-  // 尝试解码base64
-  try {
-    const base64Data = str.split(",")[1];
-    if (!base64Data) return false;
-    
-    // 尝试解码一小部分数据
-    const sample = base64Data.substring(0, 100);
-    atob(sample);
-    return true;
-  } catch (e) {
-    return false;
-  }
-}
-
-/**
- * 将图像数据从base64迁移到image表
- */
-async function migrateImages(): Promise<void> {
-  if (isMigrateImagesRunning || isCompressRunning || isFetchTagsRunning) {
-    setMessage(migrateMessage, "请先停止当前任务");
-    return;
-  }
-
-  isMigrateImagesRunning = true;
-  shouldStopMigrateImages = false;
-
-  // 更新按钮状态
-  migrateImagesBtn.disabled = true;
-
-  // 重置进度显示
-  migratePercent.textContent = "0%";
-  migrateProcessedCount.textContent = "0";
-  migrateTotalCount.textContent = "0";
-  migrateStatus.textContent = "准备中...";
-  setMessage(migrateMessage, "正在扫描数据库...");
-
-  try {
-    const platform = platformSelect.value as Platform;
-    const videoRepository = new VideoRepository();
-    const creatorRepository = new CreatorRepository();
-    const imageRepository = new ImageRepository();
-    
-    // 获取所有视频
-    const allVideos = await videoRepository.getAllVideos();
-    const videosToProcess = allVideos.filter(v => v.platform === platform && !v.isInvalid);
-    
-    // 获取所有创作者
-    const allCreators = await creatorRepository.getAllCreators(platform);
-    
-    let processedCount = 0;
-    let successCount = 0;
-    let skipCount = 0;
-    let errorCount = 0;
-    
-    const migrateTypeValue = migrateType.value;
-    
-    // 根据选择的迁移类型确定要处理的内容
-    const processVideos = migrateTypeValue === "both" || migrateTypeValue === "video";
-    const processCreators = migrateTypeValue === "both" || migrateTypeValue === "creator";
-    
-    let totalItems = 0;
-    if (processVideos) totalItems += videosToProcess.length;
-    if (processCreators) totalItems += allCreators.length;
-    
-    setMessage(migrateMessage, `开始迁移图像数据...`);
-    migrateTotalCount.textContent = String(totalItems);
-    
-    // 处理每个视频的封面图片
-    if (processVideos) {
-      setMessage(migrateMessage, `找到 ${videosToProcess.length} 个视频，开始迁移封面图像...`);
-      
-      for (const video of videosToProcess) {
-        if (shouldStopMigrateImages) {
-          migrateStatus.textContent = "已停止";
-          setMessage(migrateMessage, "图像迁移任务已停止");
+      switch (dataType) {
+        case 'all':
+          await testDataGenerator.generateAll(count, (type, current, total) => {
+            testDataStatus.textContent = `正在生成${type}...`;
+            updateProgress(current, total);
+          });
+          testDataStatus.textContent = '生成完成';
           break;
-        }
-        
-        try {
-          // 检查视频是否有封面图片
-          if (video.picture && isBase64Image(video.picture)) {
-            // 将base64转换为blob
-            const blob = await dataUrlToBlob(video.picture);
-            
-            // 创建新的图像记录
-            const newImage = await imageRepository.createImage({
-              purpose: ImagePurpose.COVER,
-              data: blob
-            });
-            
-            // 更新视频，将picture字段替换为image ID
-            await videoRepository.upsertVideo({
-              ...video,
-              picture: newImage.id
-            });
-            
-            successCount++;
-            console.log(`[MigrateImages] Successfully migrated image for video ${video.videoId}`);
-          } else {
-            skipCount++;
-            console.log(`[MigrateImages] Skipping video ${video.videoId} - no valid base64 image found`);
-          }
-        } catch (error) {
-          console.error(`[MigrateImages] Error processing video ${video.videoId}:`, error);
-          errorCount++;
-        }
-        
-        processedCount++;
-        updateMigrateProgress(processedCount, totalItems);
-        
-        // 添加延迟，避免请求过于频繁
-        await new Promise(resolve => setTimeout(resolve, 100));
+        case 'creators':
+          await testDataGenerator.generateCreators(count, updateProgress);
+          testDataStatus.textContent = '生成完成';
+          break;
+        case 'videos':
+          await testDataGenerator.generateVideos(count, updateProgress);
+          testDataStatus.textContent = '生成完成';
+          break;
+        case 'collections':
+          await testDataGenerator.generateCollections(count, updateProgress);
+          testDataStatus.textContent = '生成完成';
+          break;
+        case 'tags':
+          await testDataGenerator.generateTags(count, updateProgress);
+          testDataStatus.textContent = '生成完成';
+          break;
+        case 'add-tags-to-creators':
+          // 获取创作者总数
+          const creators = await testDataGenerator['existingCreators'];
+          const totalCreators = creators.length || await (new CreatorRepositoryImpl()).getAll().then(c => c.length);
+          testDataTotalCount.textContent = totalCreators.toString();
+
+          await testDataGenerator.addTagsToExistingCreators((current, total) => {
+            updateProgress(current, total);
+          });
+          testDataStatus.textContent = '添加完成';
+          break;
       }
-    }
-    
-    // 处理每个创作者的头像
-    if (processCreators) {
-      if (processVideos) {
-        setMessage(migrateMessage, `视频封面迁移完成，开始迁移创作者头像...`);
+
+      if (dataType === 'add-tags-to-creators') {
+        testDataMessage.textContent = `成功为创作者添加标签`;
       } else {
-        setMessage(migrateMessage, `找到 ${allCreators.length} 个创作者，开始迁移头像图像...`);
+        testDataMessage.textContent = `成功生成 ${count} 条${dataType === 'all' ? '测试数据' : dataType}数据`;
       }
-      
-      for (const creator of allCreators) {
-        if (shouldStopMigrateImages) {
-          migrateStatus.textContent = "已停止";
-          setMessage(migrateMessage, "图像迁移任务已停止");
-          break;
-        }
-        
-        try {
-          // 检查创作者是否有头像
-          if (creator.avatar && isBase64Image(creator.avatar)) {
-            // 将base64转换为blob
-            const blob = await dataUrlToBlob(creator.avatar);
-            
-            // 创建新的图像记录
-            const newImage = await imageRepository.createImage({
-              purpose: ImagePurpose.AVATAR,
-              data: blob
-            });
-            
-            // 更新创作者，将avatar字段替换为image ID
-            await creatorRepository.upsertCreator({
-              ...creator,
-              avatar: newImage.id
-            });
-            
-            successCount++;
-            console.log(`[MigrateImages] Successfully migrated avatar for creator ${creator.creatorId}`);
-          } else {
-            skipCount++;
-            console.log(`[MigrateImages] Skipping creator ${creator.creatorId} - no valid base64 avatar found`);
-          }
-        } catch (error) {
-          console.error(`[MigrateImages] Error processing creator ${creator.creatorId}:`, error);
-          errorCount++;
-        }
-        
-        processedCount++;
-        updateMigrateProgress(processedCount, totalItems);
-        
-        // 添加延迟，避免请求过于频繁
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
+    } catch (error) {
+      testDataStatus.textContent = '生成失败';
+      testDataMessage.textContent = `错误: ${error instanceof Error ? error.message : String(error)}`;
+    } finally {
+      // 启用按钮
+      generateTestDataBtn.disabled = false;
+      testDataTypeSelect.disabled = false;
+      testDataCountInput.disabled = false;
     }
-    
-    if (!shouldStopMigrateImages) {
-      const typeText = {
-        "both": "视频封面和创作者头像",
-        "video": "视频封面",
-        "creator": "创作者头像"
-      }[migrateTypeValue];
-      
-      setMessage(migrateMessage, `${typeText}迁移完成！成功: ${successCount}, 跳过: ${skipCount}, 失败: ${errorCount}`);
-    }
-  } catch (error) {
-    console.error("[MigrateImages] Error:", error);
-    setMessage(migrateMessage, `错误: ${error instanceof Error ? error.message : String(error)}`);
-  } finally {
-    isMigrateImagesRunning = false;
-    migrateImagesBtn.disabled = false;
-  }
-}
-
-/**
- * 初始化页面
- */
-function initPage(): void {
-  startCompressBtn.addEventListener("click", startCompress);
-  stopCompressBtn.addEventListener("click", stopCompress);
-  updateStatsBtn.addEventListener("click", updateCollectionStats);
-  fetchMissingTagsBtn.addEventListener("click", fetchMissingTags);
-  migrateImagesBtn.addEventListener("click", migrateImages);
-}
-
-// 页面加载完成后初始化
-if (typeof document !== "undefined") {
-  initPage();
-}
+  });
+});

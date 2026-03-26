@@ -2,32 +2,6 @@
  * Background service worker initialization.
  */
 
-import {
-  ALARM_CLASSIFY_UPS,
-  ALARM_COLLECT_UP_PAGES,
-  ALARM_UPDATE_UP_LIST,
-  type AlarmManager,
-  type RuntimeManager,
-  type TabsManager
-} from "./modules/types.js";
-import {
-  classifyUPWithPageData,
-  handleCollectionTabRemoved,
-  handleUPPageCollected,
-  startAutoClassification
-} from "./modules/classify-page.js";
-import { updateUpListTask } from "./modules/up-list.js";
-
-export { ALARM_CLASSIFY_UPS, ALARM_COLLECT_UP_PAGES, ALARM_UPDATE_UP_LIST };
-export { updateUpListTask };
-export { handleUPPageCollected, classifyUPWithPageData, startAutoClassification };
-
-declare const chrome: {
-  alarms?: AlarmManager;
-  runtime?: RuntimeManager;
-  tabs?: TabsManager;
-};
-
 export function initBackground(): void {
   console.log("[Background] Extension started");
   // if (typeof chrome === "undefined" || !chrome.alarms) {
@@ -55,11 +29,6 @@ export function initBackground(): void {
   //   });
   // }
 
-  if (typeof chrome !== "undefined" && chrome.tabs?.onRemoved) {
-    chrome.tabs.onRemoved.addListener((tabId) => {
-      handleCollectionTabRemoved(tabId);
-    });
-  }
 }
 
 if (typeof chrome !== "undefined") {

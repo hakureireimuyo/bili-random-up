@@ -15,8 +15,8 @@ import type {
 } from './types.js';
 
 export class Book<T> {
-  bookId: string;
-  resultIds: string[];
+  bookId: number;
+  resultIds: number[];
   pages: Map<number, BookPage<T>>;
   state: BookPageState;
 
@@ -24,8 +24,8 @@ export class Book<T> {
   protected queryService: IQueryService<any>;
 
   constructor(
-    bookId: string,
-    resultIds: string[],
+    bookId: number,
+    resultIds: number[],
     repository: IDataRepository<T>,
     queryService: any,
     pageSize: number = 20

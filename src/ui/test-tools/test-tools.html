@@ -89,6 +89,40 @@
       <span id="migrate-message"></span>
     </div>
 
+    <h2>测试数据生成</h2>
+    <div>
+      <label>
+        数据类型：
+        <select id="test-data-type">
+          <option value="all">全部数据</option>
+          <option value="creators">创作者</option>
+          <option value="videos">视频</option>
+          <option value="collections">收藏夹</option>
+          <option value="tags">标签</option>
+          <option value="add-tags-to-creators">为创作者添加标签</option>
+        </select>
+      </label>
+      <label>
+        数量：
+        <input type="number" id="test-data-count" min="1" max="1000" value="10">
+      </label>
+      <button id="generate-test-data-btn">生成测试数据</button>
+    </div>
+    <div>
+      <span>进度：</span>
+      <span id="test-data-status">等待开始...</span>
+      <span id="test-data-percent">0%</span>
+    </div>
+    <div>
+      <span>已处理：</span>
+      <span id="test-data-processed-count">0</span>
+      <span>总数：</span>
+      <span id="test-data-total-count">0</span>
+    </div>
+    <div>
+      <span id="test-data-message"></span>
+    </div>
+
     <script type="module" src="./test-tools.ts"></script>
   </body>
 </html>

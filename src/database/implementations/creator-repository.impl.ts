@@ -1,32 +1,33 @@
 /**
- * CreatorRepository 实现
+ * CreatorRepositoryImpl 实现
  * 实现创作者相关的数据库操作
  * 专门针对IndexedDB优化，只提供获取全部数据、分页获取数据以及基于索引的增删改查方法
  */
 
-import { Creator } from '../types/creator.js';
+import { Creator,CreatorTagWeight } from '../types/creator.js';
 import { Platform, PaginationParams, PaginationResult } from '../types/base.js';
 import { DBUtils, STORE_NAMES } from '../indexeddb/index.js';
-import { ImageRepository } from './image-repository.impl.js';
+import { ImageRepositoryImpl } from './image-repository.impl.js';
 import {ImagePurpose } from '../types/image.js'
 import { ID } from '../types/base.js';
+import { Tag } from '../types/semantic.js';
 
 /**
- * CreatorRepository 实现类
+ * CreatorRepositoryImpl 实现类
  * 专门针对IndexedDB优化，避免复杂条件查询过滤排序等低效操作
  */
-export class CreatorRepository {
+export class CreatorRepositoryImpl {
   /**
    * ImageRepository依赖
    */
-  private imageRepository: ImageRepository;
+  private imageRepository: ImageRepositoryImpl;
 
   /**
    * 构造函数
    * @param imageRepository 图片仓库实例
    */
-  constructor(imageRepository?: ImageRepository) {
-    this.imageRepository = imageRepository || new ImageRepository();
+  constructor(imageRepository?: ImageRepositoryImpl) {
+    this.imageRepository = imageRepository || new ImageRepositoryImpl();
   }
   /**
    * 创建或更新创作者信息
@@ -255,6 +256,74 @@ export class CreatorRepository {
     };
 
     await this.upsertCreator(updated);
+  }
+
+  /**
+   * 添加单个标签到创作者
+   * @param creatorId 创作者ID
+   * @param tag 标签对象（由调用方提供完整的 Tag 信息）
+   * @param source 标签来源，默认为'user'（手动添加）
+   * @returns 是否成功添加
+   */
+  async addTag(creatorId: ID, tag: Tag): Promise<boolean> {
+    // 1. 获取创作者信息
+    const creator = await this.getCreator(creatorId);
+    if (!creator) {
+      throw new Error(`Creator not found: ${creatorId}`);
+    }
+
+    // 2. 检查标签是否已存在
+    const existingTagWeight = creator.tagWeights.find(tw => tw.tagId === tag.tagId);
+    if (existingTagWeight) {
+      // 标签已存在
+      if (existingTagWeight.source === 'system') {
+        // 如果是系统标签，权重+1
+        existingTagWeight.count += 1;
+        await this.upsertCreator(creator);
+        return true;
+      } else {
+        // 如果是用户标签，无需重复添加
+        return false;
+      }
+    }
+
+    // 3. 标签不存在，添加新标签
+    const newTagWeight: CreatorTagWeight = {
+      tagId: tag.tagId,
+      source:tag.source,
+      count: tag.source === 'system' ? 1 : 0,
+      createdAt: Date.now()
+    };
+
+    creator.tagWeights.push(newTagWeight);
+    await this.upsertCreator(creator);
+    return true;
+  }
+
+  /**
+   * 从创作者移除单个标签
+   * @param creatorId 创作者ID
+   * @param tag 标签对象（由调用方提供完整的 Tag 信息）
+   * @returns 是否成功移除
+   */
+  async removeTag(creatorId: ID, tag: Tag): Promise<boolean> {
+    // 1. 获取创作者信息
+    const creator = await this.getCreator(creatorId);
+    if (!creator) {
+      throw new Error(`Creator not found: ${creatorId}`);
+    }
+
+    // 2. 查找标签
+    const tagIndex = creator.tagWeights.findIndex(tw => tw.tagId === tag.tagId);
+    if (tagIndex === -1) {
+      // 标签不存在
+      return false;
+    }
+
+    // 3. 移除标签
+    creator.tagWeights.splice(tagIndex, 1);
+    await this.upsertCreator(creator);
+    return true;
   }
 
   /**

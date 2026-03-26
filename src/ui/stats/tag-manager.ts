@@ -1,167 +1,159 @@
+import { TagRepository, TagSource,ID,CreatorRepository } from "../../database/index.js";
+import type { TagInfo } from "./types.js";
 
-import { createDragGhost, getDragContext, removeDragGhost, setDragContext } from "./drag.js";
-import { colorFromTag, normalizeTag } from "./helpers.js";
-import { getInputValue } from "./dom.js";
-import { creatorRepository, tagRepository } from "../../database/repository/index.js";
-import { buildSearchUrl } from '../../utls/url-builder.js';
-import { TagSource } from '../../database/types/base.js';
-import { Tag } from '../../database/types/semantic.js';
 
 type RenderFn = () => void | Promise<void>;
 
-function resolveDetach(): boolean {
-  return Boolean(getDragContext() && !getDragContext()?.dropped);
+const tagRepo = new TagRepository();
+const creatorpo= new CreatorRepository();
+/**
+ * 获取所有标签
+ */
+export async function getAllTags(): Promise<TagInfo[]> {
+  const result = await tagRepo.getAllTags();
+  return result.items.map(tag => ({
+    tagId: tag.tagId,
+    name: tag.name,
+    source: tag.source
+  }));
 }
 
+/**
+ * 创建新标签
+ */
+export async function createTag(name: string, source: TagSource = TagSource.USER): Promise<ID> {
+  return await tagRepo.createTag(name, source);
+}
+
+/**
+ * 搜索标签
+ */
+export async function searchTags(keyword: string): Promise<TagInfo[]> {
+  const result = await tagRepo.searchTags(keyword);
+  return result.items.map(tag => ({
+    tagId: tag.tagId,
+    name: tag.name,
+    source: tag.source
+  }));
+}
+
+/**
+ * 批量获取标签
+ */
+export async function getTagsByIds(tagIds: ID[]): Promise<Map<ID, TagInfo>> {
+  const tags = await tagRepo.getTags(tagIds);
+  const result = new Map<ID, TagInfo>();
+  tags.forEach(tag => {
+    result.set(tag.tagId, {
+      tagId: tag.tagId,
+      name: tag.name,
+      source: tag.source
+    });
+  });
+  return result;
+}
+
+/**
+ * 渲染标签药丸
+ */
 export async function renderTagPill(
-  tag: Tag,
+  tag: TagInfo,
   options?: {
     count?: number;
     onDetached?: () => void;
     isAuto?: boolean;
-    creatorId?: string;
-    onRemove?: (creatorId: string, tagName: string) => Promise<void>;
+    creatorId?: ID;
+    onRemove?: (creatorId: ID, tagName: string) => Promise<void>;
   }
 ): Promise<HTMLSpanElement> {
-  const {
-    count,
-    onDetached,
-    isAuto = false,
-    creatorId,
-    onRemove
-  } = options ?? {};
-
-  const tagName = tag.name
-  const tagId = tag.tagId
-
   const pill = document.createElement("span");
-  pill.className = isAuto ? "tag-pill tag-pill-auto" : "tag-pill";
-  pill.textContent = count !== undefined ? `${tagName} (${count})` : tagName;
-  pill.style.backgroundColor = colorFromTag(tagName);
-  pill.draggable = true;
-  pill.dataset.tagId = tagId;
-  pill.dataset.tagName = tagName;
-
-  if (isAuto) {
-    pill.style.cursor = "grab";
-    const icon = document.createElement("i");
-    icon.className = "auto-tag-icon";
-    icon.textContent = "✧";
-    pill.appendChild(icon);
+  pill.className = "tag-pill";
+  
+  const pillContent = document.createElement("span");
+  pillContent.className = "tag-pill-content";
+  pillContent.textContent = tag.name;
+  pill.appendChild(pillContent);
+  
+  if (options?.count !== undefined) {
+    const countBadge = document.createElement("span");
+    countBadge.className = "tag-pill-count";
+    countBadge.textContent = options.count.toString();
+    pill.appendChild(countBadge);
   }
-
-  pill.addEventListener("click", () => {
-    const keyword = encodeURIComponent(tagName);
-    window.open(buildSearchUrl(keyword), "_blank", "noreferrer");
-  });
-
-  pill.addEventListener("dragstart", (e) => {
-    if (e.dataTransfer) {
-      // 传输标签 ID 和名称
-      const dragData = JSON.stringify({ tagId, tagName });
-      e.dataTransfer.setData("application/x-bili-tag", dragData);
-      e.dataTransfer.effectAllowed = isAuto ? "copy" : "move";
-    }
-    createDragGhost(e, tagName);
-    if (isAuto) {
-      setDragContext({ tagId, tagName, dropped: false });
-      pill.style.cursor = "grabbing";
-    } else {
-      setDragContext({ tagId, tagName, originUpMid: creatorId, dropped: false });
-    }
-  });
-
-  pill.addEventListener("dragend", () => {
-    removeDragGhost();
-    if (isAuto) {
-      setDragContext(null);
-      pill.style.cursor = "grab";
-    } else {
-      if (creatorId !== undefined && onRemove) {
-        if (getDragContext()?.originUpMid === creatorId && !getDragContext()?.dropped) {
-          void onRemove(creatorId, tagName);
-        }
-      } else if (onDetached && resolveDetach()) {
-        onDetached();
-      }
-      setDragContext(null);
-    }
-  });
-
+  
+  if (options?.onRemove && options.creatorId) {
+    const removeBtn = document.createElement("button");
+    removeBtn.className = "tag-pill-remove";
+    removeBtn.textContent = "×";
+    removeBtn.addEventListener("click", async () => {
+      await options.onRemove!(options.creatorId!, tag.name);
+      options.onDetached?.();
+    });
+    pill.appendChild(removeBtn);
+  }
+  
   return pill;
 }
 
-export async function renderAutoTagPill(tag: Tag, count: number): Promise<HTMLSpanElement> {
+/**
+ * 渲染自动标签药丸
+ */
+export async function renderAutoTagPill(tag: TagInfo, count: number): Promise<HTMLSpanElement> {
   return renderTagPill(tag, { count, isAuto: true });
 }
 
+/**
+ * 添加标签到UP主
+ */
 export async function addTagToUp(
-  creatorId: string,
-  tagId: string,
+  creatorId: ID,
+  tagId: ID,
   onChanged?: RenderFn
 ): Promise<void> {
-  // 添加标签到UP主
-  await creatorRepository.addTag(creatorId,tagId,TagSource.USER);
-
-  if (onChanged) {
-    await onChanged();
-  }
+  const tag = await tagRepo.getById(tagId)
+  if (!tag) return;
+  await creatorpo.addTag(creatorId,tag);
+  onChanged?.();
 }
 
+/**
+ * 从UP主移除标签
+ */
 export async function removeTagFromUp(
-  creatorId: string,
-  tagid: string,
+  creatorId: ID,
+  tagId: ID,
   onChanged?: RenderFn
 ): Promise<void> {
-  await creatorRepository.removeTag(creatorId, tagid);
-
-  if (onChanged) {
-    await onChanged();
-  }
+  const tag = await tagRepo.getById(tagId)
+  if (!tag) return;
+  await creatorpo.removeTag(creatorId, tag);
+  onChanged?.();
 }
 
+/**
+ * 添加自定义标签
+ */
 export async function addCustomTag(
-  creatorId: string,
-  tagName: string, 
+  creatorId: ID,
+  tagName: string,
   onChanged?: RenderFn
 ): Promise<void> {
-  const tagId = await tagRepository.createTag(tagName, TagSource.USER);
-  await creatorRepository.addTag(creatorId, tagId, TagSource.USER);
-  if (onChanged) {
-    await onChanged();
-  }
+  const tagId = await createTag(tagName, TagSource.USER);
+  await addTagToUp(creatorId, tagId, onChanged);
 }
 
+/**
+ * 渲染标签列表
+ */
 export async function renderTagList(): Promise<void> {
-  const container = document.getElementById("tag-list");
-  if (!container) {
-    return;
-  }
-
+  const tags = await getAllTags();
+  const container = document.getElementById("tag-list-container");
+  if (!container) return;
+  
   container.innerHTML = "";
-
-  // 获取搜索关键词并使用数据层的高效搜索方法
-  const searchTerm = getInputValue("tag-search").trim();
-  const allTagsResult = await tagRepository.query({ 
-    source: TagSource.USER,
-    keyword: searchTerm 
-  });
-
-  if (allTagsResult.data.length === 0) {
-    const item = document.createElement("div");
-    item.className = "list-item";
-    item.textContent = searchTerm ? "未找到匹配的标签" : "暂无分类词条";
-    container.appendChild(item);
-    return;
-  }
-
-  // 渲染
-  for (const tag of allTagsResult.data) {
-    const item = document.createElement("div");
-    item.className = "list-item";
-    const label = document.createElement("span");
-    label.appendChild(await renderTagPill(tag));
-    item.appendChild(label);
-    container.appendChild(item);
+  
+  for (const tag of tags) {
+    const pill = await renderTagPill(tag);
+    container.appendChild(pill);
   }
 }

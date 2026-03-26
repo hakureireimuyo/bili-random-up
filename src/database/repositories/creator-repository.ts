@@ -13,12 +13,12 @@ import type {
   Creator,
   CreatorTagWeight
 } from '../types/creator.js';
-import type { ID } from '../types/base.js';
-import { Platform } from '../types/base.js';
+import type { Tag } from '../types/semantic.js';
+import type { ID, Platform, PaginationParams, PaginationResult } from '../types/base.js';
 import type { CreatorIndex } from '../query-server/cache/types.js';
 
 import { CacheManager } from '../query-server/cache/cache-manager.js';
-import { CreatorRepository as CreatorRepositoryImpl } from '../implementations/creator-repository.impl.js';
+import { CreatorRepositoryImpl } from '../implementations/creator-repository.impl.js';
 import type { IDataRepository } from '../query-server/book/base-book-manager.js';
 
 /**
@@ -29,14 +29,14 @@ export class CreatorRepository implements IDataRepository<Creator> {
   private repository: CreatorRepositoryImpl;
   private cacheManager: CacheManager;
   private indexCache: ReturnType<CacheManager['getIndexCache']>;
-  private dataCache: ReturnType<CacheManager['getDataCache']>;
+  private dataCache: ReturnType<CacheManager['getCreatorDataCache']>;
   private tagCache: ReturnType<CacheManager['getTagCache']>;
 
   constructor() {
     this.repository = new CreatorRepositoryImpl();
     this.cacheManager = CacheManager.getInstance();
     this.indexCache = this.cacheManager.getIndexCache();
-    this.dataCache = this.cacheManager.getDataCache<Creator>();
+    this.dataCache = this.cacheManager.getCreatorDataCache();
     this.tagCache = this.cacheManager.getTagCache();
   }
 
@@ -156,6 +156,235 @@ export class CreatorRepository implements IDataRepository<Creator> {
     }
   }
 
+  /**
+   * 获取指定平台的全部创作者
+   * 先从缓存获取，未命中则从数据库获取
+   */
+  async getAllCreators(platform: Platform): Promise<Creator[]> {
+    // 从数据库获取指定平台的创作者
+    const creators = await this.repository.getAllCreators(platform);
+
+    // 批量更新缓存
+    const cacheEntries = new Map<number, Creator>();
+    creators.forEach(creator => {
+      cacheEntries.set(creator.creatorId, creator);
+    });
+    this.dataCache.setBatch(cacheEntries);
+
+    return creators;
+  }
+
+  /**
+   * 获取分页后的创作者数据
+   * 先从缓存获取，未命中则从数据库获取
+   */
+  async getPaginatedCreators(
+    platform: Platform,
+    params: PaginationParams = { page: 1, pageSize: 20 }
+  ): Promise<PaginationResult<Creator>> {
+    // 从数据库获取分页数据
+    const result = await this.repository.getPaginatedCreators(platform, params);
+
+    // 批量更新缓存
+    const cacheEntries = new Map<number, Creator>();
+    result.items.forEach(creator => {
+      cacheEntries.set(creator.creatorId, creator);
+    });
+    this.dataCache.setBatch(cacheEntries);
+
+    return result;
+  }
+
+  /**
+   * 获取已关注的创作者
+   * 先从缓存获取，未命中则从数据库获取
+   */
+  async getFollowingCreators(platform: Platform): Promise<Creator[]> {
+    // 从数据库获取已关注的创作者
+    const creators = await this.repository.getFollowingCreators(platform);
+
+    // 批量更新缓存
+    const cacheEntries = new Map<number, Creator>();
+    creators.forEach(creator => {
+      cacheEntries.set(creator.creatorId, creator);
+    });
+    this.dataCache.setBatch(cacheEntries);
+
+    return creators;
+  }
+
+  /**
+   * 获取已关注的创作者(分页)
+   * 先从缓存获取，未命中则从数据库获取
+   */
+  async getPaginatedFollowingCreators(
+    platform: Platform,
+    params: PaginationParams = { page: 1, pageSize: 20 }
+  ): Promise<PaginationResult<Creator>> {
+    // 从数据库获取分页数据
+    const result = await this.repository.getPaginatedFollowingCreators(platform, params);
+
+    // 批量更新缓存
+    const cacheEntries = new Map<number, Creator>();
+    result.items.forEach(creator => {
+      cacheEntries.set(creator.creatorId, creator);
+    });
+    this.dataCache.setBatch(cacheEntries);
+
+    return result;
+  }
+
+  /**
+   * 获取创作者的手动标签ID列表
+   */
+  async getUPManualTags(creatorId: ID): Promise<ID[]> {
+    return await this.repository.getUPManualTags(creatorId);
+  }
+
+  /**
+   * 添加单个标签到创作者
+   * @param creatorId 创作者ID
+   * @param tag 标签对象（由调用方提供完整的 Tag 信息）
+   * @returns 是否成功添加
+   */
+  async addTag(creatorId: ID, tag: Tag): Promise<boolean> {
+    // 1. 调用 repository 层实现添加标签
+    const result = await this.repository.addTag(creatorId, tag);
+
+    // 2. 如果添加成功，更新缓存
+    if (result) {
+      const creator = await this.getCreator(creatorId);
+      if (creator) {
+        this.updateAllCaches(creator);
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * 从创作者移除单个标签
+   * @param creatorId 创作者ID
+   * @param tag 标签对象（由调用方提供完整的 Tag 信息）
+   * @returns 是否成功移除
+   */
+  async removeTag(creatorId: ID, tag: Tag): Promise<boolean> {
+    // 1. 调用 repository 层实现移除标签
+    const result = await this.repository.removeTag(creatorId, tag);
+
+    // 2. 如果移除成功，更新缓存
+    if (result) {
+      const creator = await this.getCreator(creatorId);
+      if (creator) {
+        this.updateAllCaches(creator);
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * 删除创作者
+   * 先更新数据库，再更新缓存，确保数据一致性
+   */
+  async deleteCreator(creatorId: ID): Promise<void> {
+    // 1. 先更新数据库
+    await this.repository.deleteCreator(creatorId);
+
+    // 2. 从缓存中移除
+    this.dataCache.delete(creatorId);
+    // IndexCache 和 TagCache 的清理由 CacheManager 统一管理
+  }
+
+  /**
+   * 标记创作者为已注销
+   * 先更新数据库，再更新缓存，确保数据一致性
+   */
+  async markCreatorAsLogout(creatorId: ID): Promise<void> {
+    // 1. 先更新数据库
+    await this.repository.markCreatorAsLogout(creatorId);
+
+    // 2. 更新缓存
+    const creator = await this.getCreator(creatorId);
+    if (creator) {
+      this.updateAllCaches(creator);
+    }
+  }
+
+  /**
+   * 获取指定平台的创作者数量
+   */
+  async getCreatorCount(platform: Platform): Promise<number> {
+    return await this.repository.getCreatorCount(platform);
+  }
+
+  /**
+   * 获取已关注创作者数量
+   */
+  async getFollowedCount(platform: Platform): Promise<number> {
+    return await this.repository.getFollowedCount(platform);
+  }
+
+  /**
+   * 获取未关注创作者数量
+   */
+  async getUnfollowedCount(platform: Platform): Promise<number> {
+    return await this.repository.getUnfollowedCount(platform);
+  }
+
+  /**
+   * 更新创作者头像URL
+   * 先更新数据库，再更新缓存，确保数据一致性
+   */
+  async updateAvatarUrl(creatorId: ID, avatarUrl: string): Promise<void> {
+    // 1. 先更新数据库
+    await this.repository.updateAvatarUrl(creatorId, avatarUrl);
+
+    // 2. 更新缓存
+    const creator = await this.getCreator(creatorId);
+    if (creator) {
+      this.updateAllCaches(creator);
+    }
+  }
+
+  /**
+   * 获取创作者头像二进制数据
+   * 如果本地没有头像数据，会尝试从URL下载并存储
+   */
+  async getAvatarBinary(creatorId: ID): Promise<Blob | null> {
+    return await this.repository.getAvatarBinary(creatorId);
+  }
+
+  /**
+   * 保存创作者头像二进制数据
+   * 将二进制数据存储到images_data表中，并更新creator表的avatar字段
+   */
+  async saveAvatarBinary(creatorId: ID, avatarBlob: Blob): Promise<void> {
+    // 1. 先更新数据库
+    await this.repository.saveAvatarBinary(creatorId, avatarBlob);
+
+    // 2. 更新缓存
+    const creator = await this.getCreator(creatorId);
+    if (creator) {
+      this.updateAllCaches(creator);
+    }
+  }
+
+  /**
+   * 删除创作者头像二进制数据
+   * 同时清除images_data表中的对应数据
+   */
+  async deleteAvatarBinary(creatorId: ID): Promise<void> {
+    // 1. 先更新数据库
+    await this.repository.deleteAvatarBinary(creatorId);
+
+    // 2. 更新缓存
+    const creator = await this.getCreator(creatorId);
+    if (creator) {
+      this.updateAllCaches(creator);
+    }
+  }
+
   // ==================== 缓存管理职责 ====================
 
   /**
@@ -216,17 +445,16 @@ export class CreatorRepository implements IDataRepository<Creator> {
    * 根据ID获取单个数据
    * 实现 IDataRepository 接口
    */
-  async getById(id: string): Promise<Creator | null> {
-    return this.getCreator(parseInt(id));
+  async getById(id: ID): Promise<Creator | null> {
+    return this.getCreator(id);
   }
 
   /**
    * 根据ID列表批量获取数据
    * 实现 IDataRepository 接口
    */
-  async getByIds(ids: string[]): Promise<Creator[]> {
-    const numericIds = ids.map(id => parseInt(id));
-    return this.getCreatorsByIds(numericIds);
+  async getByIds(ids: ID[]): Promise<Creator[]> {
+    return this.getCreatorsByIds(ids);
   }
 
   /**
@@ -246,26 +474,14 @@ export class CreatorRepository implements IDataRepository<Creator> {
 
     return allCreators;
   }
-
-  /**
-   * 将 Creator 对象转换为 CreatorIndex
-   */
-  private creatorToIndex(creator: Creator): CreatorIndex {
-    return {
-      creatorId: creator.creatorId,
-      name: creator.name,
-      tags: creator.tagWeights.map(tw => tw.tagId),
-      isFollowing: creator.isFollowing === 1
-    };
-  }
-
+  
   // ==================== 缓存统计职责 ====================
 
   /**
    * 获取缓存统计信息
    */
   getCacheStats(): {
-    dataCache: {
+    creatorDataCache: {
       size: number;
       totalAccesses: number;
       avgAccessCount: number;
@@ -284,7 +500,7 @@ export class CreatorRepository implements IDataRepository<Creator> {
   } {
     const stats = this.cacheManager.getStats();
     return {
-      dataCache: stats.dataCache,
+      creatorDataCache: stats.creatorDataCache,
       indexCache: stats.indexCache,
       tagCache: stats.tagCache
     };

@@ -1,239 +1,237 @@
-
-import { getDragContext } from "./drag.js";
-import { colorFromTag, removeFromList, resetFilters } from "./helpers.js";
-import { tagRepository, categoryRepository } from "../../database/repository/index.js";
-import type { StatsState } from "./types.js";
+import type { StatsState, FilterState } from "./types.js";
+import type { ServiceContainer } from "./services.js";
+import { resetFilters } from "./helpers.js";
+import { ID } from "../../database/types/index.js";
+import { getDragContext, setDragContext } from "../../utls/drag-utils.js";
 
 type RefreshFn = () => void;
 
-async function getTagName(tagId: string): Promise<string> {
-  const tag = tagRepository.getTag(tagId);
-  return tag?.name || tagId;
+let services: ServiceContainer | null = null;
+
+/**
+ * 初始化服务
+ */
+export function initFilterManagerServices(container: ServiceContainer): void {
+  services = container;
 }
 
-function createFilterTag(tagId: string, type: "include" | "exclude", state: StatsState, refresh: RefreshFn): HTMLElement {
-  const tagEl = document.createElement("div");
-  tagEl.className = "filter-tag";
-  tagEl.textContent = tagId; // 初始显示tagId，异步加载后会更新
-  tagEl.style.backgroundColor = colorFromTag(tagId);
-  tagEl.dataset.tagId = tagId;
-  
-  // 异步获取标签名称
-  void getTagName(tagId).then(tagName => {
-    tagEl.textContent = tagName;
-  });
-
-  const removeBtn = document.createElement("span");
-  removeBtn.className = "remove-tag";
-  removeBtn.textContent = "×";
-  removeBtn.addEventListener("click", () => {
-    // 立即移除 DOM 元素
-    tagEl.remove();
-
-    // 更新状态
-    if (type === "include") {
-      state.filters.includeTags = removeFromList(state.filters.includeTags, tagId);
-    } else {
-      state.filters.excludeTags = removeFromList(state.filters.excludeTags, tagId);
-    }
-
-    // 只刷新 UP 列表，不重新渲染筛选标签
-    refresh();
-  });
-
-  tagEl.appendChild(removeBtn);
-  return tagEl;
+/**
+ * 获取服务容器
+ */
+function getServices(): ServiceContainer {
+  if (!services) {
+    throw new Error('FilterManager services not initialized. Call initFilterManagerServices first.');
+  }
+  return services;
 }
 
-async function createFilterCategory(
-  categoryId: string,
-  type: "include" | "exclude",
-  state: StatsState,
-  refresh: RefreshFn
-): Promise<HTMLElement> {
-  const category = await categoryRepository.getCategory(categoryId);
-  const categoryEl = document.createElement("div");
-  categoryEl.className = "filter-tag filter-tag-category";
-  categoryEl.style.backgroundColor = "#2b6cff";
-  categoryEl.style.color = "#fff";
-  categoryEl.textContent = category?.name ?? "未知分区";
-
-  const removeBtn = document.createElement("span");
-  removeBtn.className = "remove-tag";
-  removeBtn.textContent = "×";
-  removeBtn.addEventListener("click", () => {
-    // 立即移除 DOM 元素
-    categoryEl.remove();
-
-    // 更新状态
-    if (type === "include") {
-      state.filters.includeCategories = removeFromList(state.filters.includeCategories, categoryId);
-    } else {
-      state.filters.excludeCategories = removeFromList(state.filters.excludeCategories, categoryId);
-    }
-
-    // 只刷新 UP 列表，不重新渲染筛选标签
-    refresh();
-  });
-
-  categoryEl.appendChild(removeBtn);
-  return categoryEl;
-}
-
-export async function renderFilterTags(state: StatsState, refresh: RefreshFn): Promise<void> {
-  const includeContainer = document.getElementById("filter-include-tags");
-  const excludeContainer = document.getElementById("filter-exclude-tags");
-  if (!includeContainer || !excludeContainer) {
-    return;
-  }
-
-  includeContainer.innerHTML = "";
-  excludeContainer.innerHTML = "";
-
-  for (const tag of state.filters.includeTags) {
-    includeContainer.appendChild(createFilterTag(tag, "include", state, refresh));
-  }
-  for (const tag of state.filters.excludeTags) {
-    excludeContainer.appendChild(createFilterTag(tag, "exclude", state, refresh));
-  }
-  for (const categoryId of state.filters.includeCategories) {
-    includeContainer.appendChild(await createFilterCategory(categoryId, "include", state, refresh));
-  }
-  for (const categoryId of state.filters.excludeCategories) {
-    excludeContainer.appendChild(await createFilterCategory(categoryId, "exclude", state, refresh));
+/**
+ * 添加包含标签
+ */
+export function addIncludeTag(state: StatsState, tagId: ID): void {
+  if (!state.filters.includeTags.includes(tagId)) {
+    state.filters.includeTags.push(tagId);
   }
 }
 
-async function applyCategoryFilter(state: StatsState, categoryId: string, type: "include" | "exclude"): Promise<void> {
-  // 获取分类信息
-  const category = await categoryRepository.getCategory(categoryId);
-  if (!category) {
-    return;
-  }
-
-  if (type === "include") {
-    // 添加分类ID到包含列表
-    if (!state.filters.includeCategories.includes(categoryId)) {
-      state.filters.includeCategories.push(categoryId);
-    }
-    // 从排除列表中移除
-    state.filters.excludeCategories = removeFromList(state.filters.excludeCategories, categoryId);
-    // 添加分类的标签列表（OR条件）
-    state.filters.includeCategoryTags = state.filters.includeCategoryTags.filter(ct => ct.categoryId !== categoryId);
-    state.filters.includeCategoryTags.push({
-      categoryId,
-      tagIds: category.tagIds
-    });
-    // 从排除标签列表中移除
-    state.filters.excludeCategoryTags = state.filters.excludeCategoryTags.filter(ct => ct.categoryId !== categoryId);
-    return;
-  }
-
-  // 添加分类ID到排除列表
-  if (!state.filters.excludeCategories.includes(categoryId)) {
-    state.filters.excludeCategories.push(categoryId);
-  }
-  // 从包含列表中移除
-  state.filters.includeCategories = removeFromList(state.filters.includeCategories, categoryId);
-  // 添加分类的标签列表（NOT条件）
-  state.filters.excludeCategoryTags = state.filters.excludeCategoryTags.filter(ct => ct.categoryId !== categoryId);
-  state.filters.excludeCategoryTags.push({
-    categoryId,
-    tagIds: category.tagIds
-  });
-  // 从包含标签列表中移除
-  state.filters.includeCategoryTags = state.filters.includeCategoryTags.filter(ct => ct.categoryId !== categoryId);
+/**
+ * 移除包含标签
+ */
+export function removeIncludeTag(state: StatsState, tagId: ID): void {
+  state.filters.includeTags = state.filters.includeTags.filter(id => id !== tagId);
 }
 
-function applyTagFilter(state: StatsState, tagId: string, type: "include" | "exclude"): void {
-  if (type === "include") {
-    state.filters.excludeTags = removeFromList(state.filters.excludeTags, tagId);
-    if (!state.filters.includeTags.includes(tagId)) {
-      state.filters.includeTags.push(tagId);
-    }
-    return;
-  }
-
-  state.filters.includeTags = removeFromList(state.filters.includeTags, tagId);
+/**
+ * 添加排除标签
+ */
+export function addExcludeTag(state: StatsState, tagId: ID): void {
   if (!state.filters.excludeTags.includes(tagId)) {
     state.filters.excludeTags.push(tagId);
   }
 }
 
-export function setupDragAndDrop(state: StatsState, refresh: RefreshFn): void {
-  const includeZone = document.getElementById("filter-include-tags");
-  const excludeZone = document.getElementById("filter-exclude-tags");
-  if (!includeZone || !excludeZone) {
-    return;
+/**
+ * 移除排除标签
+ */
+export function removeExcludeTag(state: StatsState, tagId: ID): void {
+  state.filters.excludeTags = state.filters.excludeTags.filter(id => id !== tagId);
+}
+
+/**
+ * 清除所有筛选
+ */
+export function clearAllFilters(state: StatsState): void {
+  resetFilters(state.filters);
+}
+
+/**
+ * 检查是否有活动筛选
+ */
+export function hasActiveFilters(state: StatsState): boolean {
+  return (
+    state.filters.includeTags.length > 0 ||
+    state.filters.excludeTags.length > 0 ||
+    state.filters.includeCategories.length > 0 ||
+    state.filters.excludeCategories.length > 0
+  );
+}
+
+/**
+ * 渲染筛选标签
+ */
+export async function renderFilterTags(state: StatsState, refresh: RefreshFn): Promise<void> {
+  const container = document.getElementById("filter-tags-container");
+  if (!container) return;
+
+  container.innerHTML = "";
+
+  // 渲染包含标签
+  if (state.filters.includeTags.length > 0) {
+    const includeSection = document.createElement("div");
+    includeSection.className = "filter-section";
+    includeSection.innerHTML = "<div class=\"filter-section-title\">包含标签:</div>";
+
+    const tagsContainer = document.createElement("div");
+    tagsContainer.className = "filter-tags";
+
+    // 获取标签名称
+    const includeTagsMap = await getServices().tagRepo.getTags(state.filters.includeTags);
+
+    for (const tagId of state.filters.includeTags) {
+      const tag = includeTagsMap.get(tagId);
+      const tagName = tag?.name || String(tagId);
+      
+      const tagElement = document.createElement("span");
+      tagElement.className = "filter-tag include-tag";
+      tagElement.textContent = tagName;
+
+      const removeBtn = document.createElement("button");
+      removeBtn.className = "filter-tag-remove";
+      removeBtn.textContent = "×";
+      removeBtn.addEventListener("click", () => {
+        removeIncludeTag(state, tagId);
+        refresh();
+      });
+
+      tagElement.appendChild(removeBtn);
+      tagsContainer.appendChild(tagElement);
+    }
+
+    includeSection.appendChild(tagsContainer);
+    container.appendChild(includeSection);
   }
 
-  const zones = [
-    { element: includeZone, type: "include" as const },
-    { element: excludeZone, type: "exclude" as const }
-  ];
+  // 渲染排除标签
+  if (state.filters.excludeTags.length > 0) {
+    const excludeSection = document.createElement("div");
+    excludeSection.className = "filter-section";
+    excludeSection.innerHTML = "<div class=\"filter-section-title\">排除标签:</div>";
 
-  for (const zone of zones) {
-    zone.element.addEventListener("dragover", (e) => {
-      e.preventDefault();
-      zone.element.classList.add("drag-over");
-    });
-    zone.element.addEventListener("dragleave", () => {
-      zone.element.classList.remove("drag-over");
-    });
-    zone.element.addEventListener("drop", (e) => {
-      e.preventDefault();
-      zone.element.classList.remove("drag-over");
+    const tagsContainer = document.createElement("div");
+    tagsContainer.className = "filter-tags";
 
-      const categoryTagData = e.dataTransfer?.getData("application/x-bili-category-tag");
-      if (categoryTagData) {
-        try {
-          const payload = JSON.parse(categoryTagData) as { categoryId?: string };
-          if (payload.categoryId) {
-            void applyCategoryFilter(state, payload.categoryId, zone.type).then(() => {
-              void renderFilterTags(state, refresh);
-              refresh();
-            });
-          }
-        } catch {
-          return;
-        }
-        return;
-      }
+    // 获取标签名称
+    const excludeTagsMap = await getServices().tagRepo.getTags(state.filters.excludeTags);
 
-      const tagData = e.dataTransfer?.getData("application/x-bili-tag") ?? e.dataTransfer?.getData("text/plain");
-      if (!tagData) {
-        return;
-      }
+    for (const tagId of state.filters.excludeTags) {
+      const tag = excludeTagsMap.get(tagId);
+      const tagName = tag?.name || String(tagId);
+      
+      const tagElement = document.createElement("span");
+      tagElement.className = "filter-tag exclude-tag";
+      tagElement.textContent = tagName;
 
-      // 解析标签 ID 和名称
-      let tagId: string;
-      try {
-        const parsed = JSON.parse(tagData);
-        if (parsed.tagId) {
-          tagId = parsed.tagId;
-        } else {
-          // 兼容旧格式（仅标签名称）- 直接使用tagName作为tagId
-          tagId = parsed.tagName || tagData;
-        }
-      } catch {
-        // 如果不是 JSON 格式，直接使用原始数据作为tagId
-        tagId = tagData;
-      }
+      const removeBtn = document.createElement("button");
+      removeBtn.className = "filter-tag-remove";
+      removeBtn.textContent = "×";
+      removeBtn.addEventListener("click", () => {
+        removeExcludeTag(state, tagId);
+        refresh();
+      });
 
-      const currentDrag = getDragContext();
-      if (currentDrag) {
-        currentDrag.dropped = true;
-      }
+      tagElement.appendChild(removeBtn);
+      tagsContainer.appendChild(tagElement);
+    }
 
-      applyTagFilter(state, tagId, zone.type);
-      void renderFilterTags(state, refresh);
-      refresh();
-    });
+    excludeSection.appendChild(tagsContainer);
+    container.appendChild(excludeSection);
   }
 }
 
+/**
+ * 清除所有筛选
+ */
 export async function clearFilters(state: StatsState, refresh: RefreshFn): Promise<void> {
-  resetFilters(state.filters);
-  await renderFilterTags(state, refresh);
+  clearAllFilters(state);
   refresh();
+}
+
+/**
+ * 设置拖拽功能
+ */
+export function setupDragAndDrop(state: StatsState, refresh: RefreshFn): void {
+  const includeZone = document.getElementById("filter-include-tags");
+  const excludeZone = document.getElementById("filter-exclude-tags");
+
+  if (!includeZone || !excludeZone) {
+    console.warn('[filter-manager] 过滤区域未找到');
+    return;
+  }
+
+  // 设置包含区域的拖拽事件
+  setupDropZone(includeZone, state, refresh, 'include');
+
+  // 设置排除区域的拖拽事件
+  setupDropZone(excludeZone, state, refresh, 'exclude');
+}
+
+/**
+ * 设置拖放区域
+ */
+function setupDropZone(
+  zone: HTMLElement,
+  state: StatsState,
+  refresh: RefreshFn,
+  type: 'include' | 'exclude'
+): void {
+  // 阻止默认行为，允许放置
+  zone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    if (e.dataTransfer) {
+      e.dataTransfer.dropEffect = 'copy';
+    }
+    zone.classList.add('drag-over');
+  });
+
+  // 拖拽离开时移除样式
+  zone.addEventListener('dragleave', (e) => {
+    if (!zone.contains(e.relatedTarget as Node)) {
+      zone.classList.remove('drag-over');
+    }
+  });
+
+  // 处理放置事件
+  zone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    zone.classList.remove('drag-over');
+
+    const context = getDragContext();
+    if (!context || !context.tagId) {
+      return;
+    }
+
+    // 更新过滤状态
+    if (type === 'include') {
+      addIncludeTag(state, context.tagId);
+    } else {
+      addExcludeTag(state, context.tagId);
+    }
+
+    // 标记已放置
+    context.dropped = true;
+    setDragContext(context);
+
+    // 刷新显示
+    refresh();
+  });
 }

@@ -1,97 +1,107 @@
 # `src/ui/stats`
 
-本目录实现标签统计与 UP 分类管理页面，采用三层架构设计（应用层、查询层、缓存层）。
+本目录实现标签统计与 UP 分类管理页面的基础框架。
 
-## 架构概述
+## 重要说明
 
-```
-┌─────────────────────────────────────┐
-│         应用层 (app)                 │
-│  - UI渲染                           │
-│  - 用户交互                         │
-│  - 业务流程控制                     │
-└──────────────┬──────────────────────┘
-               │ 调用查询层
-┌──────────────▼──────────────────────┐
-│         查询层 (query)               │
-│  - 数据查询                         │
-│  - 复杂业务逻辑                     │
-│  - 缓存管理                         │
-└──────────────┬──────────────────────┘
-               │ 访问数据库
-┌──────────────▼──────────────────────┐
-│      数据库实现层 (database)         │
-│  - 数据持久化                       │
-│  - 数据库操作                       │
-└─────────────────────────────────────┘
-```
+⚠️ **当前状态：数据交互已移除**
+
+本目录正在进行底层重构，所有数据操作代码已暂时移除，仅保留UI框架和基础结构。以下功能等待底层重构完成后重新实现：
+
+- 标签管理（添加、删除、查询）
+- 分类管理（创建、修改、删除）
+- 筛选功能（标签筛选、分类筛选）
+- UP列表渲染和分页
+- 拖拽功能
+- 数据加载和保存
 
 ## 目录结构
 
 ```
 src/ui/stats/
-├── app/                    # 应用层
-│   ├── stats.ts            # 页面主入口
-│   ├── types.ts            # 类型定义
-│   ├── helpers.ts          # 辅助函数
-│   ├── dom.ts              # DOM操作工具
-│   ├── drag.ts             # 拖拽上下文
-│   ├── page-actions.ts     # 页面操作
-│   ├── tag-manager.ts      # 标签管理
-│   ├── category-manager.ts  # 分类管理
-│   ├── filter-manager.ts   # 筛选管理
-│   └── up-list.ts          # UP列表渲染
-├── query/                  # 查询层
-│   ├── index.ts            # 查询模块统一导出
-│   ├── query.ts            # 查询类型定义
-│   ├── creator-query.ts    # 创作者查询
-│   ├── tag-query.ts        # 标签查询
-│   └── category-query.ts   # 分类查询
-├── cache/                  # 缓存层
-│   ├── index.ts            # 缓存模块统一导出
-│   ├── lru-cache.ts        # LRU缓存基类
-│   ├── creator-cache.ts    # 创作者缓存
-│   ├── tag-cache.ts        # 标签缓存
-│   └── category-cache.ts   # 分类缓存
-└── README.md              # 本文档
+├── stats.ts            # 页面主入口
+├── types.ts            # 类型定义
+├── helpers.ts          # 辅助函数（状态管理）
+├── dom.ts              # DOM操作工具（从通用工具导出）
+├── drag.ts             # 拖拽操作（从通用工具导出）
+├── page-actions.ts     # 页面操作绑定
+├── tag-manager.ts      # 标签管理（基础框架）
+├── category-manager.ts  # 分类管理（基础框架）
+├── filter-manager.ts   # 筛选管理（基础框架）
+├── up-list.ts          # UP列表渲染（基础框架）
+├── stats.html          # 页面HTML
+├── stats.css           # 页面样式
+└── README.md          # 本文档
 ```
 
-## 主要职责
+## 通用工具
 
-### 应用层 (app)
-- UI渲染和DOM操作
-- 用户事件处理
-- 页面状态管理
-- 调用查询层获取数据
+以下通用功能已移至 `src/utls` 目录：
 
-### 查询层 (query)
-- 实现数据查询逻辑
-- 与数据库实现层交互
-- 管理缓存数据
-- 实现复杂业务逻辑
-- 提供统一的数据访问接口
+- `dom-utils.ts` - DOM操作通用工具
+- `drag-utils.ts` - 拖拽操作通用工具
+- `tag-utils.ts` - 标签和颜色相关工具
+- `url-builder.ts` - URL构建工具
 
-### 缓存层 (cache)
-- 提供统一的缓存服务
-- 实现缓存数据的存储和检索
-- 管理缓存生命周期
-- 提供缓存统计和监控
-- 实现LRU淘汰策略
+## 文件说明
+
+### 核心文件
+
+- **stats.ts**: 页面初始化和主入口
+  - 创建初始状态
+  - 绑定页面操作
+  - 协调各模块渲染
+
+- **types.ts**: 类型定义
+  - StatsState: 页面状态
+  - FilterState: 筛选状态
+  - CategoryTagList: 分类标签列表
+
+- **helpers.ts**: 辅助函数
+  - createInitialState: 创建初始状态
+  - resetFilters: 重置筛选器
+
+### 管理器文件
+
+- **tag-manager.ts**: 标签管理
+  - renderTagList: 渲染标签列表
+  - renderTagPill: 渲染标签元素
+  - addTagToUp/removeTagFromUp: 标签操作
+
+- **category-manager.ts**: 分类管理
+  - renderCategories: 渲染分类列表
+  - addCategory/removeCategory: 分类操作
+  - addTagToCategory/removeTagFromCategory: 分类标签操作
+
+- **filter-manager.ts**: 筛选管理
+  - renderFilterTags: 渲染筛选标签
+  - setupDragAndDrop: 设置拖拽功能
+  - clearFilters: 清除所有筛选
+
+- **up-list.ts**: UP列表管理
+  - renderUpList: 渲染UP列表
+  - refreshUpList: 刷新UP列表
+  - renderPagination: 渲染分页控件
+
+### 工具文件
+
+- **dom.ts**: DOM操作（从通用工具导出）
+- **drag.ts**: 拖拽操作（从通用工具导出）
+- **page-actions.ts**: 页面操作绑定
 
 ## 设计原则
 
-### 数据访问原则
-- 应用层所有数据获取必须通过查询层实现
-- 应用层禁止直接访问数据库实现层
-- 应用层禁止直接访问IndexedDB
-- 应用层禁止直接操作缓存层
+### 代码组织
+- 将通用功能移至 `src/utls` 避免代码重复
+- 保持各模块职责单一
+- 清晰的模块边界和接口
 
-### 职责分离
-- 应用层：UI渲染和用户交互
-- 查询层：数据查询和业务逻辑
-- 缓存层：缓存管理和性能优化
+### 数据访问
+- 所有数据操作通过统一接口
+- 避免直接访问底层存储
+- 等待底层重构完成后统一实现
 
-### 性能优化
-- 使用LRU缓存策略管理数据
-- 支持批量操作减少数据库访问
-- 实现按需加载和预加载机制
+### UI框架
+- 保留完整的UI结构
+- 保持事件处理框架
+- 维护状态管理机制

@@ -1,5 +1,5 @@
 /**
- * VideoRepository 实现
+ * VideoRepositoryImpl 实现
  * 基于 IndexedDB 的视频仓库实现
  * 只实现适合 IndexedDB 的高效操作：
  * - 基于主键和索引的增删改查
@@ -10,18 +10,18 @@
 import { Video } from '../types/video.js';
 import { Platform, PaginationParams, PaginationResult, ID } from '../types/base.js';
 import { DBUtils, STORE_NAMES } from '../indexeddb/index.js';
-import { ImageRepository } from './image-repository.impl.js';
+import { ImageRepositoryImpl } from './image-repository.impl.js';
 import { ImagePurpose } from '../types/image.js';
 import { generateId } from './id-generator.js';
 
 /**
- * VideoRepository 实现类
+ * VideoRepositoryImpl 实现类
  */
-export class VideoRepository {
-  private imageRepository: ImageRepository;
+export class VideoRepositoryImpl {
+  private imageRepository: ImageRepositoryImpl;
 
   constructor() {
-    this.imageRepository = new ImageRepository();
+    this.imageRepository = new ImageRepositoryImpl();
   }
 
   /**

@@ -1,6 +1,5 @@
-
 /**
- * DOM操作工具函数
+ * DOM操作通用工具函数
  */
 
 export function setText(id: string, value: string): void {

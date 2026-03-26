@@ -41,7 +41,7 @@ function patchHtmlEntryScripts() {
     join(extensionRoot, "ui", "popup", "popup.html"),
     join(extensionRoot, "ui", "options", "options.html"),
     join(extensionRoot, "ui", "stats", "stats.html"),
-    join(extensionRoot, "ui", "watch-stats", "watch-stats.html"),
+    // join(extensionRoot, "ui", "watch-stats", "watch-stats.html"),
     join(extensionRoot, "ui", "test-tools", "test-tools.html")
   ];
 

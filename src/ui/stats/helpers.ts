@@ -1,47 +1,41 @@
+/**
+ * 统计页面辅助函数
+ * 所有数据操作已移除，仅保留基础框架
+ */
 
-import type { Category, FilterState, StatsState, UPDisplayData } from "./types.js";
-import type { Creator } from "../../database/types/creator.js";
+import type { FilterState, StatsState, PaginationState } from "./types.js";
+import { Platform } from "../../database/types/base.js";
 
-export function countUpTags(upTags: Record<string, string[]>): number {
-  return Object.values(upTags).reduce((total, tags) => total + (tags?.length ?? 0), 0);
-}
-
-export function colorFromTag(tag: string): string {
-  let hash = 0;
-  for (let i = 0; i < tag.length; i += 1) {
-    hash = (hash * 31 + tag.charCodeAt(i)) % 360;
-  }
-  const hue = Math.abs(hash) % 360;
-  const sat = 70 + (Math.abs(hash * 7) % 21);
-  const light = 85 + (Math.abs(hash * 13) % 11);
-  return `hsl(${hue} ${sat}% ${light}%)`;
-}
-
-export function normalizeTag(tag: string): string {
-  return tag.trim();
-}
-
-export function createInitialState(platform: string = "bilibili"): StatsState {
+/**
+ * 创建初始状态
+ */
+export function createInitialState(platform: Platform = Platform.BILIBILI): StatsState {
   return {
-    platform: platform as any,
+    platform,
     showFollowedOnly: true,
-    filters: {
-      includeTags: [],
-      excludeTags: [],
-      includeCategories: [],
-      excludeCategories: []
-    }
+    filters: createEmptyFilters(),
+    cacheEnabled: true,
+    loading: false
   };
 }
 
-export function removeFromList(values: string[], target: string): string[] {
-  return values.filter((value) => value !== target);
+/**
+ * 创建空筛选器
+ */
+export function createEmptyFilters(): FilterState {
+  return {
+    includeTags: [],
+    excludeTags: [],
+    includeCategories: [],
+    excludeCategories: [],
+    includeCategoryTags: [],
+    excludeCategoryTags: []
+  };
 }
 
-export function findCategory(categories: Category[], categoryId: string): Category | undefined {
-  return categories.find((category) => category.id === categoryId);
-}
-
+/**
+ * 重置过滤器状态
+ */
 export function resetFilters(filters: FilterState): void {
   filters.includeTags = [];
   filters.excludeTags = [];
@@ -51,15 +45,29 @@ export function resetFilters(filters: FilterState): void {
   filters.excludeCategoryTags = [];
 }
 
-export function creatorToCacheData(creator: Creator): UPDisplayData {
+/**
+ * 创建初始分页状态
+ */
+export function createInitialPagination(): PaginationState {
   return {
-    creatorId: creator.creatorId,
-    name: creator.name,
-    avatar: null, // 头像数据从数据库异步获取
-    avatarUrl: creator.avatarUrl || '',
-    description: creator.description,
-    followTime: creator.followTime,
-    isFollowing: creator.isFollowing === 1,
-    tags: []
+    currentPage: 0,
+    pageSize: 50,
+    totalPages: 0,
+    totalItems: 0
   };
 }
+
+/**
+ * 更新加载状态
+ */
+export function setLoading(state: StatsState, loading: boolean): void {
+  state.loading = loading;
+}
+
+/**
+ * 设置错误信息
+ */
+export function setError(state: StatsState, error?: string): void {
+  state.error = error;
+}
+

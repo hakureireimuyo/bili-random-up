@@ -1,5 +1,5 @@
 /**
- * CollectionItemRepository 实现
+ * CollectionItemRepositoryImpl 实现
  * 职责：仅管理收藏项自身数据，不涉及收藏夹的任何操作
  * 设计原则：基于IndexedDB特性，只实现高效操作
  * - 支持基于主键和索引的增删改查
@@ -10,9 +10,9 @@ import { DBUtils, STORE_NAMES } from '../indexeddb/index.js';
 import { generateId } from './id-generator.js';
 import { ID } from '../types/base.js';
 /**
- * CollectionItemRepository 实现类
+ * CollectionItemRepositoryImpl 实现类
  */
-export class CollectionItemRepository {
+export class CollectionItemRepositoryImpl {
   /**
    * 根据主键获取收藏项
    * @param itemId 收藏项ID

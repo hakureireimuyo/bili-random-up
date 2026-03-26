@@ -1,5 +1,5 @@
 /**
- * WatchEventRepository 实现
+ * WatchEventRepositoryImpl 实现
  * 实现观看事件相关的数据库操作
  */
 
@@ -9,9 +9,9 @@ import { DBUtils, STORE_NAMES } from '../indexeddb/index.js';
 import { generateId } from './id-generator.js';
 import {ID} from '../types/base.js'
 /**
- * WatchEventRepository 实现类
+ * WatchEventRepositoryImpl 实现类
  */
-export class WatchEventRepository {
+export class WatchEventRepositoryImpl {
   /**
    * 记录观看事件
    */

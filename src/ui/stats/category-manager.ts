@@ -1,192 +1,129 @@
-import { createDragGhost, getDragContext, removeDragGhost, setDragContext } from "./drag.js";
-import { colorFromTag } from "./helpers.js";
-import {getInputValue } from './dom.js'
-import type { Category, StatsState } from "./types.js";
-import { tagRepository, categoryRepository } from "../../database/repository/index.js";
+import { CategoryRepositoryImpl } from "../../database/index.js";
+import type { CategoryInfo, TagInfo} from "./types.js";
+import { ID } from '../../database/types/base.js'
 
 type RenderFn = () => void;
 
-async function getTagName(tagId: string): Promise<string> {
-  const tag = tagRepository.getTag(tagId);
-  return tag?.name || tagId;
+const categoryRepo = new CategoryRepositoryImpl();
+
+/**
+ * 获取所有分类
+ */
+export async function getAllCategories(): Promise<CategoryInfo[]> {
+  const categories = await categoryRepo.getAllCategories();
+  return categories.map(cat => ({
+    categoryId: cat.id,
+    name: cat.name,
+    description: cat.description,
+    tagIds: cat.tagIds
+  }));
 }
 
-export async function addCategory(state: StatsState, name: string, onChanged: RenderFn): Promise<void> {
-  await categoryRepository.createCategory(name);
-  if (onChanged) {
-    await onChanged();
-  }
+/**
+ * 创建新分类
+ */
+export async function createCategory(name: string, description?: string): Promise<ID> {
+  return await categoryRepo.createCategory({
+    name,
+    description,
+    tagIds: []
+  });
 }
 
-export async function removeCategory(state: StatsState, categoryId: string, onChanged: RenderFn): Promise<void> {
-  await categoryRepository.deleteCategory(categoryId);
-  if (onChanged) {
-    await onChanged();
-  }
+/**
+ * 向分类添加标签
+ */
+export async function addTagsToCategory(categoryId: ID, tagIds: ID[]): Promise<void> {
+  await categoryRepo.addTagsToCategory(categoryId, tagIds);
 }
 
-export async function addTagToCategory(state: StatsState, categoryId: string, tag: string, onChanged: RenderFn): Promise<void> {
-  await categoryRepository.addTagToCategory(categoryId, tag);
-  if (onChanged) {
-    await onChanged();
-  }
+/**
+ * 从分类移除标签
+ */
+export async function removeTagsFromCategory(categoryId: ID, tagIds: ID[]): Promise<void> {
+  await categoryRepo.removeTagsFromCategory(categoryId, tagIds);
 }
 
+/**
+ * 删除分类
+ */
+export async function deleteCategory(categoryId: ID): Promise<void> {
+  await categoryRepo.deleteCategory(categoryId);
+}
+
+/**
+ * 添加分类
+ */
+export async function addCategory(state: any, name: string, onChanged: RenderFn): Promise<void> {
+  await createCategory(name);
+  onChanged();
+}
+
+/**
+ * 删除分类
+ */
+export async function removeCategory(state: any, categoryId: ID, onChanged: RenderFn): Promise<void> {
+  await deleteCategory(categoryId);
+  onChanged();
+}
+
+/**
+ * 添加标签到分类
+ */
+export async function addTagToCategory(state: any, categoryId: ID, tagId: ID, onChanged: RenderFn): Promise<void> {
+  await addTagsToCategory(categoryId, [tagId]);
+  onChanged();
+}
+
+/**
+ * 从分类中移除标签
+ */
 export async function removeTagFromCategory(
-  state: StatsState,
-  categoryId: string,
-  tag: string,
+  state: any,
+  categoryId: ID,
+  tagId: ID,
   onChanged: RenderFn
 ): Promise<void> {
-  await categoryRepository.removeTagFromCategory(categoryId, tag);
-  if (onChanged) {
-    await onChanged();
-  }
+  await removeTagsFromCategory(categoryId, [tagId]);
+  onChanged();
 }
 
-
-function renderCategoryTagPill(
-  state: StatsState,
-  tagId: string,
-  categoryId: string,
-  onChanged: RenderFn
-): HTMLElement {
-  const pill = document.createElement("span");
-  pill.className = "tag-pill";
-  pill.textContent = tagId; // 初始显示tagId，异步加载后会更新
-  pill.style.backgroundColor = colorFromTag(tagId);
-  pill.draggable = true;
-  pill.dataset.tagId = tagId;
+/**
+ * 渲染分类列表
+ */
+export async function renderCategories(state: any, onChanged: RenderFn): Promise<void> {
+  const categories = await getAllCategories();
+  const container = document.getElementById("category-list-container");
+  if (!container) return;
   
-  // 异步获取标签名称
-  void getTagName(tagId).then(tagName => {
-    pill.textContent = tagName;
-    // 更新颜色
-    pill.style.backgroundColor = colorFromTag(tagName);
-  });
-  
-  pill.addEventListener("dragstart", (e) => {
-    const tagName = pill.textContent || tagId;
-    if (e.dataTransfer) {
-      e.dataTransfer.setData("application/x-bili-category-tag", JSON.stringify({ tagId, categoryId }));
-      e.dataTransfer.effectAllowed = "move";
-    }
-    createDragGhost(e, tagName);
-    setDragContext({ tagId, tagName, categoryId, dropped: false });
-  });
-  pill.addEventListener("dragend", () => {
-    removeDragGhost();
-    if (getDragContext() && !getDragContext()?.dropped) {
-      removeTagFromCategory(state, categoryId, tagId, onChanged);
-    }
-    setDragContext(null);
-  });
-  return pill;
-}
-
-function setupCategoryTagDropZone(element: HTMLElement, state: StatsState, categoryId: string, onChanged: RenderFn): void {
-  element.addEventListener("dragover", (e) => {
-    e.preventDefault();
-    element.classList.add("drag-over");
-  });
-  element.addEventListener("dragleave", () => {
-    element.classList.remove("drag-over");
-  });
-  element.addEventListener("drop", (e) => {
-    e.preventDefault();
-    element.classList.remove("drag-over");
-    const tagData = e.dataTransfer?.getData("application/x-bili-tag") ?? e.dataTransfer?.getData("text/plain");
-    if (!tagData) {
-      return;
-    }
-
-    // 解析标签数据
-    let tag: string;
-    try {
-      const parsed = JSON.parse(tagData);
-      tag = parsed.tagName || tagData;
-    } catch {
-      tag = tagData;
-    }
-
-    const currentDrag = getDragContext();
-    if (currentDrag) {
-      currentDrag.dropped = true;
-    }
-    addTagToCategory(state, categoryId, tag, onChanged);
-  });
-}
-
-function renderCategoryItem(state: StatsState, category: Category, onChanged: RenderFn): HTMLElement {
-  const item = document.createElement("div");
-  item.className = "category-item";
-  item.draggable = true;
-  item.addEventListener("dragstart", (e) => {
-    if (e.dataTransfer) {
-      e.dataTransfer.setData(
-        "application/x-bili-category-tag",
-        JSON.stringify({ tag: category.name, categoryId: category.id })
-      );
-      e.dataTransfer.effectAllowed = "move";
-    }
-    createDragGhost(e, category.name);
-    setDragContext({ tagId: category.id, tagName: category.name, categoryId: category.id, dropped: false });
-  });
-  item.addEventListener("dragend", () => {
-    removeDragGhost();
-    setDragContext(null);
-  });
-
-  const header = document.createElement("div");
-  header.className = "category-header";
-
-  const name = document.createElement("span");
-  name.className = "category-name";
-  name.textContent = category.name;
-
-  const removeBtn = document.createElement("span");
-  removeBtn.className = "category-remove";
-  removeBtn.textContent = "×";
-  removeBtn.addEventListener("click", () => removeCategory(state, category.id, onChanged));
-
-  header.appendChild(name);
-  header.appendChild(removeBtn);
-
-  const tagsContainer = document.createElement("div");
-  tagsContainer.className = "category-tags";
-  tagsContainer.dataset.categoryId = category.id;
-  setupCategoryTagDropZone(tagsContainer, state, category.id, onChanged);
-
-  for (const tagId of category.tagIds) {
-    tagsContainer.appendChild(renderCategoryTagPill(state, tagId, category.id, onChanged));
-  }
-
-  item.appendChild(header);
-  item.appendChild(tagsContainer);
-  return item;
-}
-
-export async function renderCategories(state: StatsState, onChanged: RenderFn): Promise<void> {
-  const container = document.getElementById("category-list");
-  if (!container) {
-    return;
-  }
-
   container.innerHTML = "";
   
-  // 从数据层获取分类数据
-  const categories = await categoryRepository.getAllCategories();
-  if (categories.length === 0) {
-    const item = document.createElement("div");
-    item.className = "list-item";
-    item.textContent = "暂无大分区";
-    container.appendChild(item);
-    return;
-  }
-
-  const searchTerm = getInputValue("category-search").toLowerCase();
-  const filteredCategories = categories.filter((category) => category.name.toLowerCase().includes(searchTerm));
-  for (const category of filteredCategories) {
-    container.appendChild(renderCategoryItem(state, category, onChanged));
+  for (const category of categories) {
+    const categoryElement = document.createElement("div");
+    categoryElement.className = "category-item";
+    
+    const categoryName = document.createElement("div");
+    categoryName.className = "category-name";
+    categoryName.textContent = category.name;
+    categoryElement.appendChild(categoryName);
+    
+    if (category.description) {
+      const categoryDesc = document.createElement("div");
+      categoryDesc.className = "category-description";
+      categoryDesc.textContent = category.description;
+      categoryElement.appendChild(categoryDesc);
+    }
+    
+    const removeBtn = document.createElement("button");
+    removeBtn.className = "category-remove-btn";
+    removeBtn.textContent = "删除";
+    removeBtn.addEventListener("click", async () => {
+      if (confirm(`确定要删除分类 "${category.name}" 吗?`)) {
+        await removeCategory(state, category.categoryId, onChanged);
+      }
+    });
+    categoryElement.appendChild(removeBtn);
+    
+    container.appendChild(categoryElement);
   }
 }

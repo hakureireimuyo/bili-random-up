@@ -1,5 +1,5 @@
 /**
- * TagRepository 实现（针对IndexedDB优化版）
+ * TagRepositoryImpl 实现（针对IndexedDB优化版）
  * 专注于获取全部数据、分页获取数据、基于索引的增删改查以及特定数据结构特有的方法
  */
 
@@ -10,7 +10,7 @@ import { DBUtils, STORE_NAMES } from '../indexeddb/index.js';
 import { ID } from '../types/base.js';
 import { generateId } from './id-generator.js';
 
-export class TagRepository {
+export class TagRepositoryImpl {
 
   // ====== 创建操作 ======
 
@@ -264,7 +264,7 @@ export class TagRepository {
   /**
    * 批量获取标签
    */
-  async getTags(tagIds: string[]): Promise<Tag[]> {
+  async getTags(tagIds: ID[]): Promise<Tag[]> {
     if (tagIds.length === 0) return [];
     
     // 使用批量获取优化性能

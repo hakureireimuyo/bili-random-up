@@ -1,122 +1,164 @@
 
-import { bindPageActions } from "./page-actions.js";
-import { addCategory, renderCategories } from "./category-manager.js";
-import { clearFilters, renderFilterTags, setupDragAndDrop } from "./filter-manager.js";
-import { createInitialState,  creatorToCacheData } from "./helpers.js";
-import {getInputValue, setText, updateToggleLabel } from "./dom.js"
-import { addCustomTag, renderTagList } from "./tag-manager.js";
-import type { Category, StatsState, TagDisplayData } from "./types.js";
-import { refreshUpList } from "./up-list.js";
-import { creatorRepository } from "../../database/repository/index.js";
+import { Platform } from "../../database/types/base.js";
+import { renderCategories, createCategory } from "./category-manager.js";
+import { renderFilterTags, setupDragAndDrop, clearFilters, initFilterManagerServices } from "./filter-manager.js";
+import { createInitialState, setLoading, setError, createInitialPagination } from "./helpers.js";
+import { updateToggleLabel } from "../../utls/dom-utils.js";
+import { renderTagList, createTag } from "./tag-manager.js";
+import type { StatsState, PaginationState } from "./types.js";
+import { refreshUpList, initUpListServices } from "./up-list.js";
+import { getServiceContainer } from "./services.js";
 
-async function rerenderPage(state: StatsState): Promise<void> {
-  const refreshOnly = () => refreshUpList(state, () => rerenderPage(state));
-  refreshOnly();
-  await renderTagList();
-  await renderCategories(state, () => rerenderPage(state));
-  void renderFilterTags(state, refreshOnly);
-}
+// 全局状态
+let state: StatsState;
+let pagination: PaginationState;
 
-function bindInputs(state: StatsState): void {
-  const tagSearchInput = document.getElementById("tag-search") as HTMLInputElement | null;
-  tagSearchInput?.addEventListener("input", () => void renderTagList());
-
-  const upSearchInput = document.getElementById("up-search") as HTMLInputElement | null;
-  upSearchInput?.addEventListener("input", () => refreshUpList(state, () => rerenderPage(state)));
-
-  const showFollowedToggle = document.getElementById("show-followed-toggle") as HTMLInputElement | null;
-  showFollowedToggle?.addEventListener("change", (e) => {
-    state.showFollowedOnly = (e.target as HTMLInputElement).checked;
-    refreshUpList(state, () => rerenderPage(state));
-  });
-
-  const addTagBtn = document.getElementById("btn-add-tag");
-  addTagBtn?.addEventListener("click", async () => {
-    const tagName = getInputValue("tag-search").trim();
-    if (!tagName) {
-      return;
-    }
-    // 注意：这里需要指定要添加标签的creatorId，当前实现中需要从UI获取
-    // 暂时使用空字符串，实际使用时需要修改
-    await addCustomTag("", tagName, async () => await renderTagList());
-  });
-
-  const categorySearchInput = document.getElementById("category-search") as HTMLInputElement | null;
-  categorySearchInput?.addEventListener("input", () => void renderCategories(state, () => rerenderPage(state)));
-
-  const addCategoryBtn = document.getElementById("btn-add-category");
-  addCategoryBtn?.addEventListener("click", async () => {
-    const value = getInputValue("category-search").trim();
-    if (!value) {
-      return;
-    }
-    await addCategory(state, value, async () => await renderCategories(state, () => rerenderPage(state)));
-    if (categorySearchInput) {
-      categorySearchInput.value = "";
-    }
-  });
-
-  const clearFilterBtn = document.getElementById("btn-clear-filter");
-  clearFilterBtn?.addEventListener("click", async () => {
-    await clearFilters(state, () => refreshUpList(state, () => rerenderPage(state)));
-  });
-}
-
-async function loadState(state: StatsState): Promise<void> {
-  console.log('[loadState] 开始加载状态');
-
-  // 从数据层获取统计数据
-  console.log('[loadState] 获取统计数据');
-  const stats = await creatorRepository.loadStats(state.platform);
-  console.log('[loadState] 统计数据:', stats);
-
-  // 更新UI显示
-  setText("stat-up-count", String(stats.followedCount + stats.unfollowedCount));
-  setText("stat-followed-count", String(stats.followedCount));
-  setText("stat-unfollowed-count", String(stats.unfollowedCount));
-}
-
+/**
+ * 初始化统计页面
+ */
 export async function initStats(): Promise<void> {
-  console.log('[initStats] 开始初始化统计页面');
-
   if (typeof document === "undefined") {
-    console.log('[initStats] document 不存在，跳过初始化');
     return;
   }
 
-  console.log('[initStats] 创建初始状态');
-  const state = createInitialState("bilibili");
+  try {
+    // 创建初始状态
+    state = createInitialState(Platform.BILIBILI);
+    pagination = createInitialPagination();
 
-  console.log('[initStats] 绑定页面动作');
-  bindPageActions();
+    // 初始化服务容器
+    const services = getServiceContainer();
+    initFilterManagerServices(services);
+    initUpListServices(services);
 
-  console.log('[initState] 开始加载状态');
-  await loadState(state);
+    // 绑定事件
+    bindPageActions();
+    bindInputs();
 
-  console.log('[initStats] 状态加载完成');
+    // 设置拖拽功能
+    setupDragAndDrop(state, () => rerenderPage());
 
-  console.log('[initStats] 设置拖拽和输入');
-  setupDragAndDrop(state, () => refreshUpList(state, () => rerenderPage(state)));
-  bindInputs(state);
-  updateToggleLabel(state.showFollowedOnly);
+    // 加载数据
+    await loadData();
+  } catch (error) {
+    console.error('[initStats] 初始化失败:', error);
+    setError(state, error instanceof Error ? error.message : '未知错误');
+  }
+}
 
-  console.log('[initStats] 开始渲染页面');
-  await rerenderPage(state);
+/**
+ * 加载数据
+ */
+async function loadData(): Promise<void> {
+  setLoading(state, true);
 
-  console.log('[initStats] 初始化完成');
+  try {
+    // 并行加载所有数据
+    await Promise.all([
+      renderTagList(),
+      renderCategories(state, () => rerenderPage()),
+      refreshUpList(state, () => rerenderPage())
+    ]);
+  } catch (error) {
+    console.error('[loadData] 加载数据失败:', error);
+    setError(state, error instanceof Error ? error.message : '加载失败');
+  } finally {
+    setLoading(state, false);
+  }
+}
+
+/**
+ * 重新渲染页面
+ */
+async function rerenderPage(): Promise<void> {
+  const refreshOnly = () => refreshUpList(state, () => rerenderPage());
+  refreshOnly();
+  await renderTagList();
+  await renderCategories(state, () => rerenderPage());
+  void renderFilterTags(state, refreshOnly);
+}
+
+/**
+ * 绑定页面操作
+ */
+function bindPageActions(): void {
+  // 绑定添加标签按钮
+  const addTagBtn = document.getElementById('btn-add-tag');
+  addTagBtn?.addEventListener('click', async () => {
+    const tagName = prompt('请输入标签名称:');
+    if (tagName) {
+      try {
+        await createTag(tagName);
+        await renderTagList();
+      } catch (error) {
+        console.error('[bindPageActions] 添加标签失败:', error);
+        setError(state, error instanceof Error ? error.message : '添加标签失败');
+      }
+    }
+  });
+
+  // 绑定添加分类按钮
+  const addCategoryBtn = document.getElementById('btn-add-category');
+  addCategoryBtn?.addEventListener('click', async () => {
+    const categoryName = prompt('请输入分类名称:');
+    if (categoryName) {
+      try {
+        await createCategory(categoryName);
+        await renderCategories(state, () => rerenderPage());
+      } catch (error) {
+        console.error('[bindPageActions] 添加分类失败:', error);
+        setError(state, error instanceof Error ? error.message : '添加分类失败');
+      }
+    }
+  });
+
+  // 绑定清除筛选按钮
+  const clearFilterBtn = document.getElementById('btn-clear-filter');
+  clearFilterBtn?.addEventListener('click', () => {
+    clearFilters(state, () => rerenderPage());
+  });
+}
+
+/**
+ * 绑定输入事件
+ */
+function bindInputs(): void {
+  // 绑定搜索框
+  const searchInput = document.getElementById('up-search');
+  searchInput?.addEventListener('input', debounce((e) => {
+    const keyword = (e.target as HTMLInputElement).value.trim();
+    state.searchKeyword = keyword;
+    refreshUpList(state, () => rerenderPage());
+  }, 300));
+
+  // 绑定关注筛选开关
+  const followToggle = document.getElementById('show-followed-toggle');
+  followToggle?.addEventListener('change', (e) => {
+    state.showFollowedOnly = (e.target as HTMLInputElement).checked;
+    refreshUpList(state, () => rerenderPage());
+  });
+}
+
+/**
+ * 防抖函数
+ */
+function debounce<T extends (...args: any[]) => any>(
+  func: T,
+  wait: number
+): (...args: Parameters<T>) => void {
+  let timeout: number | null = null;
+  return (...args: Parameters<T>) => {
+    if (timeout) clearTimeout(timeout);
+    timeout = setTimeout(() => func(...args), wait);
+  };
 }
 
 // 页面加载完成后自动初始化
 if (typeof document !== 'undefined') {
-  console.log('[stats.ts] 页面加载完成，准备初始化');
-
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
-      console.log('[stats.ts] DOMContentLoaded 事件触发');
-      void initStats();
-    });
+    document.addEventListener('DOMContentLoaded', () => void initStats());
   } else {
-    console.log('[stats.ts] DOM 已就绪，直接初始化');
     void initStats();
   }
 }
+

@@ -12,22 +12,21 @@
  */
 
 // Semantic 实现
-export { TagRepository } from './tag-repository.impl.js';
-export { CategoryRepository } from './category-repository.impl.js';
+export { TagRepositoryImpl } from './tag-repository.impl.js';
+export { CategoryRepositoryImpl } from './category-repository.impl.js';
 
 // Creator 实现
-export { CreatorRepository } from './creator-repository.impl.js';
+export { CreatorRepositoryImpl } from './creator-repository.impl.js';
 
 // Video 实现
-export { VideoRepository } from './video-repository.impl.js';
-
+export { VideoRepositoryImpl } from './video-repository.impl.js';
 
 // Behavior 实现
-export { WatchEventRepository } from './watch-event-repository.impl.js';
+export { WatchEventRepositoryImpl } from './watch-event-repository.impl.js';
 
 // Collection 实现
-export { CollectionRepository } from './collection-repository.impl.js';
-export { CollectionItemRepository } from './collection-item-repository.impl.js';
+export { CollectionRepositoryImpl } from './collection-repository.impl.js';
+export { CollectionItemRepositoryImpl } from './collection-item-repository.impl.js';
 
 // Settings 实现
 export { getValue, setValue, deleteValue } from './settings-repository.impl.js';

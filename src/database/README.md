@@ -1,187 +1,251 @@
-
-# Database 模块说明
+# Database 模块使用指南
 
 ## 概述
 
-本模块负责管理 Bilibili Discovery 系统的所有数据存储和访问，基于 IndexedDB 实现。
-
-### 设计原则
-
-1. **数据结构独立** - 每个数据结构单独一个文件
-2. **接口规范分离** - 数据结构定义和接口实现分开存储
-3. **职责明确** - 每个接口都有清晰的职责和能力边界
-4. **可扩展性** - 支持未来功能扩展
-5. **统一入口** - Repositories 层作为唯一数据入口，确保数据流可控
-6. **透明组合** - 基础操作和复杂查询透明组合，对外提供统一接口
-7. **分层清晰** - Implementations（基础操作）和 QueryService（复杂查询）职责分明
-
-## 架构设计
-
-### 数据流架构
-
-```mermaid
-graph TD
-    UI[UI 层] --> Repositories
-    Repositories[Repositories 层<br/>对外统一接口层] -->|组合| Implementations
-    Repositories -->|组合| QueryService
-    Implementations[Implementations 层<br/>基础 CRUD 操作] -->|依赖| IndexedDB
-    QueryService[QueryService 层<br/>复杂查询服务] -->|依赖| DataManager
-    QueryService -->|依赖| Cache
-    DataManager[DataManager 层<br/>核心调度层] -->|依赖| Implementations
-    Query[Query 层<br/>查询计算工具] -.->|使用| Cache
-    Cache[Cache 层<br/>缓存层]
-    IndexedDB[IndexedDB 层]
-
-    style Repositories fill:#f9f,stroke:#333,stroke-width:4px
-    style Implementations fill:#bbf,stroke:#333,stroke-width:2px
-    style QueryService fill:#bfb,stroke:#333,stroke-width:2px
+本模块是项目的数据层核心，采用分层架构设计，提供高性能的数据存储、查询和缓存能力。整体架构分为四个主要层次：
 
 ```
+┌─────────────────────────────────────────────────────────┐
+│                    业务层 (UI/业务逻辑)                    │
+└─────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────┐
+│              Repository 层 (数据中枢与唯一入口)              │
+│  - 数据库访问  - 缓存管理  - 查询协调  - 数据一致性         │
+└─────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────┐
+│           Query-Server 层 (高性能查询引擎)                 │
+│  - Cache Layer  - Query Layer  - Book Layer            │
+└─────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────┐
+│              Implementations 层 (数据访问实现)             │
+│  - Repository 实现  - 批量操作  - 基础CRUD                │
+└─────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────┐
+│              IndexedDB 层 (底层存储)                      │
+│  - 数据库管理  - 事务处理  - 索引操作                     │
+└─────────────────────────────────────────────────────────┘
+```
 
-### 各层职责
+## 目录结构
 
-#### 1. Repositories 层（对外统一接口层）
-- **职责**：作为对外唯一开放的数据访问接口，组合基础操作和复杂查询
-- **核心功能**：
-  - 组合 Implementations 层的基础 CRUD 操作
-  - 组合 QueryService 层的复杂查询功能
-  - 对外提供统一的操作接口
-  - 隐藏内部实现细节
-- **特点**：
-  - 单一入口：所有数据库操作通过 repositories 层进行
-  - 透明组合：内部委托给 implementations 和 query-service
-  - 完整功能：同时提供基础操作和复杂查询能力
-  - 简化使用：对外提供简洁一致的 API
+```
+database/
+├── types/              # 数据类型定义
+├── indexeddb/          # IndexedDB 基础设施
+├── implementations/    # 数据访问实现
+├── repositories/       # Repository 层
+├── query-server/       # 查询服务器
+│   ├── cache/         # 缓存层
+│   ├── query/         # 查询层
+│   └── book/          # 书管理层
+└── app-state.ts       # 应用状态管理
+```
 
-#### 2. DataManager 层（核心调度层）
-- **职责**：统一调度数据流
-- **核心功能**：
-  - 判断数据来源（cache / DB）
-  - 控制加载范围
-  - 调用 Query
-  - 管理 cache 生命周期
-  - 保证数据一致性
-- **特点**：
-  - 核心调度逻辑
-  - 数据流控制
-  - 缓存管理
+## 快速开始
 
-#### 4. Cache 层（缓存层）
-- **职责**：纯内存存储，不包含任何逻辑
-- **特点**：
-  - 只是数据结构（Map、Set等）
-  - 不决定何时更新或删除
-  - 不包含查询逻辑
-  - 作为 Repository 的内部实现细节
+### 1. 初始化数据库
 
-#### 5. Query 层（查询层）
-- **职责**：纯计算工具，负责数据过滤和排序
-- **特点**：
-  - 无副作用
-  - 不知道 cache 和 DB 的存在
-  - 只对给定的数据进行计算
-  - 可作为"策略"被 Repository 调用
+```typescript
+import { dbManager } from './database/indexeddb';
 
-#### 6. Implementations 层（基础操作层）
-- **职责**：提供对 IndexedDB 的底层访问和基础 CRUD 操作
-- **核心功能**：
-  - 创建、读取、更新、删除（CRUD）等基础操作
-  - 基于索引的查询
-  - 批量操作支持
-- **特点**：
-  - 直接访问 IndexedDB
-  - 针对性能优化
-  - 不包含复杂查询逻辑
-  - 提供可靠的基础数据操作
+// 初始化数据库
+const db = await dbManager.init();
+```
 
-#### 7. QueryService 层（复杂查询层）
-- **职责**：补齐 IndexedDB 缺少的复杂查询能力
-- **核心功能**：
-  - 复杂条件查询
-  - 多表关联查询
-  - 数据聚合和统计
-  - 高级过滤和排序
-- **特点**：
-  - 只提供查询功能
-  - 支持复杂查询场景
-  - 基于缓存优化性能
-  - 与 Implementations 层互补
+### 2. 使用 Repository 进行数据操作
 
-## 模块说明
+#### 创作者数据操作
 
-### Repositories 模块（对外统一接口层）
-- **category-repository.ts** - 分类数据仓库，组合基础操作和复杂查询
-- **tag-repository.ts** - 标签数据仓库，组合基础操作和复杂查询
-- **video-repository.ts** - 视频数据仓库，组合基础操作和复杂查询
-- **creator-repository.ts** - 创作者数据仓库，组合基础操作和复杂查询
-- **collection-repository.ts** - 收藏夹数据仓库，组合基础操作和复杂查询
-- **collection-item-repository.ts** - 收藏项数据仓库，组合基础操作和复杂查询
+```typescript
+import { CreatorRepository } from './database/repositories/creator-repository';
 
-### Manager 模块（核心调度层）
-- **tag-data-manager.ts** - 标签数据管理器，统一调度标签数据流
-- **video-data-manager.ts** - 视频数据管理器，统一调度视频数据流
+const creatorRepo = new CreatorRepository();
 
-### Strategy 模块（策略层）
-- **tag-strategy.ts** - 标签数据查询策略，决定"怎么查"
-- **video-strategy.ts** - 视频数据查询策略，决定"怎么查"
+// 获取单个创作者
+const creator = await creatorRepo.getCreator('creator-id');
 
-### Plan 模块（查询计划）
-- **query-plan.ts** - 查询计划定义，连接 Repository、DataManager 和 Strategy 层
+// 批量获取创作者
+const creators = await creatorRepo.getCreators(['id1', 'id2', 'id3']);
 
-### Cache 模块
-- **data-cache/** - 数据缓存，存储完整的数据对象
-  - tag-data-cache.ts - 标签数据缓存
-  - video-data-cache.ts - 视频数据缓存
-- **index-cache/** - 索引缓存，存储用于快速查询的索引数据
-  - video-index-cache.ts - 视频索引缓存
-- **lru-cache.ts** - LRU 缓存实现
-- **fifo-cache.ts** - FIFO 缓存实现
+// 创建或更新创作者
+await creatorRepo.upsertCreator({
+  id: 'creator-id',
+  name: '创作者名称',
+  platform: 'bilibili',
+  // ... 其他字段
+});
 
-### Query 模块
-- **tag/** - 标签查询
-  - tag-query.ts - 标签查询接口
-  - tag-query-engine.ts - 标签查询引擎（纯计算工具）
-  - debug.ts - 调试工具
-- **video/** - 视频查询
-  - video-query.ts - 视频查询接口
-  - video-query-engine.ts - 视频查询引擎（纯计算工具）
-  - debug.ts - 调试工具
-- **types.ts** - 查询类型定义
+// 删除创作者
+await creatorRepo.deleteCreator('creator-id');
+```
 
-### Implementations 模块（基础操作层）
-提供对 IndexedDB 的底层访问实现，包括各种数据仓库的基础 CRUD 操作。
-- **category-repository.impl.ts** - 分类基础操作实现
-- **tag-repository.impl.ts** - 标签基础操作实现
-- **video-repository.impl.ts** - 视频基础操作实现
-- **creator-repository.impl.ts** - 创作者基础操作实现
-- **collection-repository.impl.ts** - 收藏夹基础操作实现
-- **collection-item-repository.impl.ts** - 收藏项基础操作实现
-- **image-repository.impl.ts** - 图片基础操作实现
-- **settings-repository.impl.ts** - 设置基础操作实现
-- **watch-event-repository.impl.ts** - 观看事件基础操作实现
+#### 视频数据操作
 
-### QueryService 模块（复杂查询层）
-补齐 IndexedDB 缺少的复杂查询能力，提供高级查询功能。
-- **category-query-service.ts** - 分类复杂查询服务
-- **tag-query-service.ts** - 标签复杂查询服务
-- **video-query-service.ts** - 视频复杂查询服务
-- **creator-query-service.ts** - 创作者复杂查询服务
-- **collection-query-service.ts** - 收藏夹复杂查询服务
-- **favorite-query-service.ts** - 收藏复杂查询服务
+```typescript
+import { VideoRepository } from './database/repositories/video-repository';
 
-### IndexedDB 模块
-- **config.ts** - 数据库配置
-- **db-manager.ts** - 数据库管理器
-- **db-utils.ts** - 数据库工具类
-- **USAGE.md** - 使用说明
+const videoRepo = new VideoRepository();
 
-## 设计原则
+// 获取单个视频
+const video = await videoRepo.getVideo('video-id');
 
-1. **单一职责** - 每个模块只负责一类数据的操作
-2. **明确边界** - 每个方法都有清晰的能力边界
-3. **可测试性** - 接口设计便于单元测试
-4. **可扩展性** - 支持未来功能扩展
-5. **类型安全** - 完整的 TypeScript 类型定义
-6. **统一入口** - Repositories 层作为唯一数据入口，确保数据流可控
-7. **透明组合** - 基础操作和复杂查询透明组合，对外提供统一接口
-8. **分层清晰** - Implementations（基础操作）和 QueryService（复杂查询）职责分明
+// 批量获取视频
+const videos = await videoRepo.getVideos(['id1', 'id2', 'id3']);
+
+// 创建或更新视频
+await videoRepo.upsertVideo({
+  id: 'video-id',
+  title: '视频标题',
+  creatorId: 'creator-id',
+  // ... 其他字段
+});
+
+// 删除视频
+await videoRepo.deleteVideo('video-id');
+```
+
+### 3. 使用应用状态管理
+
+```typescript
+import { setAppState, getAppState, deleteAppState } from './database/app-state';
+
+// 设置应用状态
+await setAppState('user-preferences', {
+  theme: 'dark',
+  language: 'zh-CN'
+});
+
+// 获取应用状态
+const preferences = await getAppState('user-preferences');
+
+// 删除应用状态
+await deleteAppState('user-preferences');
+
+// 清除指定前缀的状态
+await clearAppStateByPrefix('temp-');
+```
+
+### 4. 使用查询功能
+
+#### 创建查询服务
+
+```typescript
+import { CacheManager } from './database/query-server/cache/cache-manager';
+import { BookManager } from './database/query-server/book/base-book-manager';
+import { CreatorRepository } from './database/repositories/creator-repository';
+
+// 获取缓存管理器
+const cacheManager = CacheManager.getInstance();
+
+// 创建书管理器
+const bookManager = new BookManager();
+
+// 创建 Repository
+const creatorRepo = new CreatorRepository();
+
+// 创建 Book
+const book = bookManager.createBook(
+  'creator-query-book',
+  queryService,  // 查询服务实例
+  cacheManager.getCreatorDataCache(),
+  creatorRepo
+);
+
+// 执行查询
+await book.updateIndex({
+  keyword: '搜索关键词',
+  // ... 其他查询条件
+});
+
+// 获取分页数据
+const page1 = await book.getPage(1, 20);
+```
+
+### 5. 如无必要,永远不要直接使用IndexedDB（）
+
+## 核心概念
+
+### Repository 层
+
+Repository 层是系统的数据中枢与唯一数据入口，负责：
+
+- **数据访问**：封装所有数据库操作
+- **缓存管理**：统一管理 IndexCache、TagCache 和 DataCache
+- **数据一致性**：在数据库与缓存之间建立一致性保障机制
+- **查询协调**：调度查询服务，返回标准化结果
+- **数据转换**：index ↔ id ↔ 完整对象
+
+### Query-Server 层
+
+Query-Server 提供高性能的数据查询和分页管理功能：
+
+- **Cache Layer**：管理索引和完整数据的内存缓存
+- **Query Layer**：执行查询逻辑，返回结果ID列表
+- **Book Layer**：管理查询结果和分页数据
+
+### Implementations 层
+
+实现层提供对底层存储的直接访问：
+
+- 实现 Repository 接口
+- 提供批量操作能力
+- 绕过缓存层直接操作数据库
+
+### IndexedDB 层
+
+封装 IndexedDB 基础设施：
+
+- 数据库初始化和管理
+- 通用的 CRUD 操作
+- 索引查询
+- 事务管理
+
+## 最佳实践
+
+### 1. 选择合适的数据访问方式
+
+- **UI 交互场景**：使用 Repository 层，享受缓存和查询优化
+- **批量导入/导出**：使用 Implementations 层，直接操作数据库,且不会将数据写入缓存
+- **复杂查询**：使用 Query-Server 层，利用查询引擎和缓存
+
+### 2. 缓存管理
+
+- 所有缓存更新必须通过 Repository 层
+- 不要在业务层直接操作缓存
+- 合理使用 DataCache 的容量限制和过期时间
+
+### 3. 查询优化
+
+- 使用索引查询提高性能
+- 批量操作使用批量方法
+- 避免在循环中执行数据库操作
+
+### 4. 错误处理
+
+```typescript
+try {
+  const creator = await creatorRepo.getCreator('creator-id');
+  // 处理数据
+} catch (error) {
+  console.error('获取创作者失败:', error);
+  // 错误处理逻辑
+}
+```
+
+## 注意事项
+
+1. **事务管理**：所有写操作都在事务中执行，事务在操作完成后自动提交
+2. **数据一致性**：批量操作会自动回滚，使用游标遍历时注意事务超时
+3. **性能优化**：合理使用缓存和索引，避免不必要的数据库查询
+4. **类型安全**：充分利用 TypeScript 的类型系统，确保数据类型正确
+
+## 更多信息
+
+- [IndexedDB 详细文档](./indexeddb/USAGE.md)
+- [Query-Server 架构说明](./query-server/README.md)
+- [Repository 层职责说明](./repositories/README.md)
+- [Implementations 层说明](./implementations/README.md)

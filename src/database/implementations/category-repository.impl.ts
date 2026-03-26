@@ -1,5 +1,5 @@
 /**
- * CategoryRepository 实现
+ * CategoryRepositoryImpl 实现
  * 实现标签分区相关的数据库操作
  */
 
@@ -9,9 +9,9 @@ import { generateId } from './id-generator.js';
 import {ID} from "../types/base.js"
 
 /**
- * CategoryRepository 实现类
+ * CategoryRepositoryImpl 实现类
  */
-export class CategoryRepository {
+export class CategoryRepositoryImpl {
   /**
    * 创建分区
    */
