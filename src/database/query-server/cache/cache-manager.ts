@@ -5,10 +5,9 @@
 
 import { IndexCache } from './index-cache.js';
 import { DataCache } from './data-cache.js';
-import { TagCache } from './tag-cache.js';
-import { VideoIndexCacheImpl } from '../video/video-index-cache.js';
+import { BaseCache, type CacheOptions, type TagCacheEntry } from './base-cache.js';
 import type { CreatorIndex } from '../query/types.js';
-import type { VideoIndex } from '../video/video-index-types.js';
+import type { VideoIndex } from '../query/types.js';
 
 /**
  * 全局缓存管理器类
@@ -24,10 +23,10 @@ export class CacheManager {
   private dataCache: DataCache<any>;
 
   // 标签缓存（共享）
-  private tagCache: TagCache;
+  private tagCache: BaseCache<TagCacheEntry>;
 
   // 视频索引缓存
-  private videoIndexCache: VideoIndexCacheImpl;
+  private videoIndexCache: IndexCache<VideoIndex>;
 
   private constructor() {
     // 初始化所有缓存单例
@@ -37,8 +36,12 @@ export class CacheManager {
       maxAge: 3600000,
       cleanupRatio: 0.2
     });
-    this.tagCache = TagCache.getInstance(100, 3600000);
-    this.videoIndexCache = new VideoIndexCacheImpl(10000);
+    this.tagCache = new BaseCache<TagCacheEntry>({
+      maxSize: 100,
+      maxAge: 3600000,
+      cleanupRatio: 0.2
+    });
+    this.videoIndexCache = new IndexCache<VideoIndex>(10000);
   }
 
   /**
@@ -68,14 +71,14 @@ export class CacheManager {
   /**
    * 获取标签缓存
    */
-  getTagCache(): TagCache {
+  getTagCache(): BaseCache<TagCacheEntry> {
     return this.tagCache;
   }
 
   /**
    * 获取视频索引缓存
    */
-  getVideoIndexCache(): VideoIndexCacheImpl {
+  getVideoIndexCache(): IndexCache<VideoIndex> {
     return this.videoIndexCache;
   }
 
@@ -95,7 +98,7 @@ export class CacheManager {
   getStats(): {
     indexCache: { size: number };
     dataCache: ReturnType<DataCache<any>['getStats']>;
-    tagCache: { size: number };
+    tagCache: ReturnType<BaseCache<TagCacheEntry>['getStats']>;
     videoIndexCache: { size: number };
   } {
     return {
@@ -103,9 +106,7 @@ export class CacheManager {
         size: this.indexCache.size()
       },
       dataCache: this.dataCache.getStats(),
-      tagCache: {
-        size: this.tagCache.size()
-      },
+      tagCache: this.tagCache.getStats(),
       videoIndexCache: {
         size: this.videoIndexCache.size()
       }

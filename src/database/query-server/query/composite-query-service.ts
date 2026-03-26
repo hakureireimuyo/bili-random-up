@@ -5,7 +5,8 @@
 
 import type { CreatorIndex, TagExpression } from './types.js';
 import { TagFilterEngine } from './tag-filter-engine.js';
-import { TagCache } from '../cache/tag-cache.js';
+import { CacheManager } from '../cache/cache-manager.js';
+import { type TagCacheEntry } from '../cache/base-cache.js';
 import { Platform } from '../../types/base.js';
 
 /**
@@ -48,11 +49,11 @@ export interface CompositeQueryResult {
  */
 export class CompositeQueryService {
   private tagFilterEngine: TagFilterEngine;
-  private tagCache: TagCache;
+  private cacheManager: CacheManager;
 
   constructor() {
     this.tagFilterEngine = new TagFilterEngine();
-    this.tagCache = TagCache.getInstance();
+    this.cacheManager = CacheManager.getInstance();
   }
 
   /**
@@ -151,12 +152,17 @@ export class CompositeQueryService {
     expressions: TagExpression[],
     cacheKey?: string
   ): CreatorIndex[] {
+    const tagCache = this.cacheManager.getTagCache();
+
     // 如果提供了缓存键，尝试从缓存获取
     if (cacheKey) {
-      const cachedResult = this.tagCache.filter(cacheKey, expressions);
-      if (cachedResult.matchedIds.size > 0) {
-        const matchedIds = Array.from(cachedResult.matchedIds);
-        return indexes.filter(index => matchedIds.includes(index.creatorId));
+      const cachedEntry = tagCache.get(cacheKey);
+      if (cachedEntry) {
+        const cachedResult = this.tagFilterEngine.filter(cachedEntry.tagToIds, expressions);
+        if (cachedResult.matchedIds.size > 0) {
+          const matchedIds = Array.from(cachedResult.matchedIds);
+          return indexes.filter(index => matchedIds.includes(index.creatorId));
+        }
       }
     }
 
@@ -173,7 +179,19 @@ export class CompositeQueryService {
 
     // 如果提供了缓存键，将构建的映射存入缓存
     if (cacheKey) {
-      this.tagCache.set(cacheKey, tagToIds);
+      // 计算总数量
+      const allIds = new Set<string>();
+      for (const ids of tagToIds.values()) {
+        for (const id of ids) {
+          allIds.add(id);
+        }
+      }
+
+      tagCache.set(cacheKey, {
+        tagToIds,
+        lastUpdate: Date.now(),
+        totalCount: allIds.size
+      });
     }
 
     // 使用TagFilterEngine执行过滤

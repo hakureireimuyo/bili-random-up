@@ -19,7 +19,11 @@ export class IndexCache<T> {
    * 设置索引
    */
   set(id: string, index: T): void {
-    // 如果缓存已满，删除最旧的条目
+    // 如果键已存在，先删除再重新添加以更新访问顺序
+    if (this.cache.has(id)) {
+      this.cache.delete(id);
+    }
+    // 如果缓存已满，删除最旧的条目（第一个键）
     if (this.cache.size >= this.maxSize) {
       const firstKey = this.cache.keys().next().value;
       if (firstKey !== undefined) {
@@ -32,8 +36,12 @@ export class IndexCache<T> {
   /**
    * 批量设置索引
    */
-  setBatch(entries: Map<string, T>): void {
-    entries.forEach((index, id) => this.set(id, index));
+  setBatch(entries: Map<string, T> | Record<string, T>): void {
+    if (entries instanceof Map) {
+      entries.forEach((index, id) => this.set(id, index));
+    } else {
+      Object.entries(entries).forEach(([id, index]) => this.set(id, index));
+    }
   }
 
   /**
@@ -41,6 +49,20 @@ export class IndexCache<T> {
    */
   get(id: string): T | undefined {
     return this.cache.get(id);
+  }
+
+  /**
+   * 批量获取索引
+   */
+  getBatch(ids: string[]): Map<string, T> {
+    const result = new Map<string, T>();
+    ids.forEach(id => {
+      const value = this.cache.get(id);
+      if (value !== undefined) {
+        result.set(id, value);
+      }
+    });
+    return result;
   }
 
   /**

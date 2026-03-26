@@ -13,6 +13,18 @@ export interface CacheEntry<T> {
 }
 
 /**
+ * 标签缓存条目
+ */
+export interface TagCacheEntry {
+  /** 标签ID到ID集合的映射 */
+  tagToIds: Map<string, Set<string>>;
+  /** 最后更新时间 */
+  lastUpdate: number;
+  /** 总数量 */
+  totalCount: number;
+}
+
+/**
  * 缓存配置选项
  */
 export interface CacheOptions {
@@ -69,8 +81,12 @@ export class BaseCache<T> {
   /**
    * 批量设置数据
    */
-  setBatch(entries: Map<string, T>): void {
-    entries.forEach((data, key) => this.set(key, data));
+  setBatch(entries: Map<string, T> | Record<string, T>): void {
+    if (entries instanceof Map) {
+      entries.forEach((data, key) => this.set(key, data));
+    } else {
+      Object.entries(entries).forEach(([key, data]) => this.set(key, data));
+    }
   }
 
   /**
@@ -97,8 +113,15 @@ export class BaseCache<T> {
   /**
    * 批量获取数据
    */
-  getBatch(keys: string[]): T[] {
-    return keys.map(key => this.get(key)).filter((item): item is T => item !== undefined);
+  getBatch(keys: string[]): Map<string, T> {
+    const result = new Map<string, T>();
+    keys.forEach(key => {
+      const value = this.get(key);
+      if (value !== undefined) {
+        result.set(key, value);
+      }
+    });
+    return result;
   }
 
   /**
@@ -221,7 +244,7 @@ export class BaseCache<T> {
         });
 
       // 删除指定比例的条目
-      const deleteCount = Math.floor(this.maxSize * this.cleanupRatio);
+      const deleteCount = Math.floor(this.cache.size * this.cleanupRatio);
       for (let i = 0; i < deleteCount && i < sortedEntries.length; i++) {
         this.cache.delete(sortedEntries[i][0]);
       }
@@ -239,13 +262,19 @@ export class BaseCache<T> {
    * 获取所有值
    */
   values(): T[] {
-    return Array.from(this.cache.values()).map(entry => entry.data);
+    const now = Date.now();
+    return Array.from(this.cache.entries())
+      .filter(([_, entry]) => now - entry.lastAccessTime <= this.maxAge)
+      .map(([_, entry]) => entry.data);
   }
 
   /**
    * 获取所有条目
    */
   entries(): [string, T][] {
-    return Array.from(this.cache.entries()).map(([key, entry]) => [key, entry.data]);
+    const now = Date.now();
+    return Array.from(this.cache.entries())
+      .filter(([_, entry]) => now - entry.lastAccessTime <= this.maxAge)
+      .map(([key, entry]) => [key, entry.data]);
   }
 }

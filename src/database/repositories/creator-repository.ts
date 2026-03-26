@@ -10,39 +10,24 @@ import type {
 import type { 
   BookQueryOptions, 
   BookQueryResult, 
-  QueryCondition,
+
   TagExpression 
 } from '../query-server/query/types.js';
 import { Platform } from '../types/base.js';
-import { BookManager } from '../query-server/book/book.js';
-import { IndexCache } from '../query-server/cache/index.js';
-import { DataCache } from '../query-server/cache/index.js';
+import { CreatorBookManager } from '../query-server/book/creator-book-manager.js';
+
 import { CreatorRepository as CreatorRepositoryImpl } from '../implementations/creator-repository.impl.js';
 
 /**
  * Creator查询Repository类
  */
 export class CreatorRepository {
-  private bookManager: BookManager;
+  private bookManager: CreatorBookManager;
   private repository: CreatorRepositoryImpl;
 
   constructor() {
     this.repository = new CreatorRepositoryImpl();
-    this.bookManager = new BookManager(undefined, undefined, this.repository);
-  }
-
-  /**
-   * 获取索引缓存实例
-   */
-  private get indexCache(): IndexCache<import('../query-server/query/types.js').CreatorIndex> {
-    return this.bookManager.getIndexCache();
-  }
-
-  /**
-   * 获取数据缓存实例
-   */
-  private get dataCache(): DataCache<Creator> {
-    return this.bookManager.getDataCache();
+    this.bookManager = new CreatorBookManager(this.repository);
   }
 
   /**
@@ -59,13 +44,12 @@ export class CreatorRepository {
     isFollowing?: boolean,
     options: BookQueryOptions = {}
   ): Promise<string> {
-    const condition: QueryCondition = {
-      type: 'name',
+    const book = await this.bookManager.createNameQueryBook(
       platform,
       keyword,
-      isFollowing
-    };
-    const book = await this.bookManager.createBook(condition, options);
+      isFollowing,
+      options
+    );
     return book.bookId;
   }
 
@@ -83,13 +67,12 @@ export class CreatorRepository {
     isFollowing?: boolean,
     options: BookQueryOptions = {}
   ): Promise<string> {
-    const condition: QueryCondition = {
-      type: 'tag',
+    const book = await this.bookManager.createTagQueryBook(
       platform,
       tagExpressions,
-      isFollowing
-    };
-    const book = await this.bookManager.createBook(condition, options);
+      isFollowing,
+      options
+    );
     return book.bookId;
   }
 
@@ -106,19 +89,6 @@ export class CreatorRepository {
     options: BookQueryOptions = {}
   ): Promise<BookQueryResult<Creator>> {
     return await this.bookManager.getPage(bookId, page, options);
-  }
-
-  /**
-   * 更新查询条件
-   * @param bookId 书ID
-   * @param newCondition 新的查询条件
-   * @returns 更新后的书
-   */
-  async updateQueryCondition(
-    bookId: string,
-    newCondition: QueryCondition
-  ): Promise<void> {
-    await this.bookManager.updateQueryCondition(bookId, newCondition);
   }
 
   /**
@@ -139,17 +109,8 @@ export class CreatorRepository {
     creatorId: string,
     platform: Platform
   ): Promise<Creator | null> {
-    // 先从缓存获取
-    const cached = this.dataCache.get(creatorId);
-    if (cached) {
-      return cached;
-    }
-
     // 从数据库获取
     const creator = await this.repository.getCreator(creatorId, platform);
-    if (creator) {
-      this.dataCache.set(creator.creatorId, creator);
-    }
     return creator;
   }
 
@@ -163,8 +124,7 @@ export class CreatorRepository {
     creatorIds: string[],
     platform: Platform
   ): Promise<Map<string, Creator>> {
-    // 先从缓存获取
-    const cachedCreators = this.dataCache.getBatch(creatorIds);
+    // 从数据库获取
     const uncachedIds = creatorIds.filter(id => 
       !cachedCreators.some((c: Creator) => c.creatorId === id)
     );
@@ -194,16 +154,7 @@ export class CreatorRepository {
    */
   async upsertCreator(creator: Creator): Promise<void> {
     await this.repository.upsertCreator(creator);
-    this.dataCache.set(creator.creatorId, creator);
-
-    // 更新索引缓存
-    const index = {
-      creatorId: creator.creatorId,
-      name: creator.name,
-      tags: creator.tagWeights.map(tw => tw.tagId),
-      isFollowing: creator.isFollowing === 1
-    };
-    this.indexCache.set(creator.creatorId, index);
+    // 索引缓存和数据缓存由 CreatorBookManager 管理，不需要手动更新
   }
 
   /**
@@ -212,21 +163,7 @@ export class CreatorRepository {
    */
   async upsertCreators(creators: Creator[]): Promise<void> {
     await this.repository.upsertCreators(creators);
-    // 使用setBatch批量设置数据
-    const entries = new Map<string, Creator>();
-    creators.forEach(creator => entries.set(creator.creatorId, creator));
-    this.dataCache.setBatch(entries);
-
-    // 更新索引缓存
-    const indexes = creators.map(creator => ({
-      creatorId: creator.creatorId,
-      name: creator.name,
-      tags: creator.tagWeights.map(tw => tw.tagId),
-      isFollowing: creator.isFollowing === 1
-    }));
-    const indexEntries = new Map<string, import('../query-server/query/types.js').CreatorIndex>();
-    indexes.forEach(index => indexEntries.set(index.creatorId, index));
-    this.indexCache.setBatch(indexEntries);
+    // 索引缓存和数据缓存由 CreatorBookManager 管理，不需要手动更新
   }
 
   /**
@@ -243,15 +180,9 @@ export class CreatorRepository {
     await this.repository.updateTagWeights(creatorId, platform, tagWeights);
 
     // 更新缓存
-    const creator = await this.getCreator(creatorId,Platform.BILIBILI);
+    const creator = await this.getCreator(creatorId, Platform.BILIBILI);
     if (creator) {
-      const index = {
-        creatorId: creator.creatorId,
-        name: creator.name,
-        tags: creator.tagWeights.map(tw => tw.tagId),
-        isFollowing: creator.isFollowing === 1
-      };
-      this.indexCache.set(creatorId, index);
+      // 索引缓存由 CreatorBookManager 管理，不需要手动更新
     }
   }
 
@@ -269,15 +200,9 @@ export class CreatorRepository {
     await this.repository.updateFollowStatus(creatorId, platform, isFollowing);
 
     // 更新缓存
-    const creator = await this.getCreator(creatorId,Platform.BILIBILI);
+    const creator = await this.getCreator(creatorId, Platform.BILIBILI);
     if (creator) {
-      const index = {
-        creatorId: creator.creatorId,
-        name: creator.name,
-        tags: creator.tagWeights.map(tw => tw.tagId),
-        isFollowing: creator.isFollowing === 1
-      };
-      this.indexCache.set(creatorId, index);
+      // 索引缓存由 CreatorBookManager 管理，不需要手动更新
     }
   }
 
@@ -290,11 +215,10 @@ export class CreatorRepository {
   }
 
   /**
-   * 清空所有缓存
+   * 清空所有书
    */
-  clearCache(): void {
-    this.indexCache.clear();
-    this.dataCache.clear();
+  clearAllBooks(): void {
+    this.bookManager.clearAllBooks();
   }
 
   /**

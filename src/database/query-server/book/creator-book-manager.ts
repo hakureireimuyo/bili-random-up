@@ -8,11 +8,10 @@ import type {
   BookPage,
   BookPageState,
   BookQueryOptions,
-  BookQueryResult,
-  QueryCondition,
-  CreatorIndex,
-  TagExpression
-} from '../query/types.js';
+  BookQueryResult
+} from './types.js';
+import type { QueryCondition } from '../query/types.js';
+import type { CreatorIndex, TagExpression } from '../cache/types.js';
 import type { Creator } from '../../types/creator.js';
 import { DataCache } from '../cache/data-cache.js';
 import { IndexCache } from '../cache/index-cache.js';

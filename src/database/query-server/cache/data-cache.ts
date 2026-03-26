@@ -32,7 +32,7 @@ export class DataCache<T> extends BaseCache<T> {
    * 批量设置数据
    * @override
    */
-  setBatch(entries: Map<string, T>): void {
+  setBatch(entries: Map<string, T> | Record<string, T>): void {
     super.setBatch(entries);
   }
 
@@ -46,7 +46,7 @@ export class DataCache<T> extends BaseCache<T> {
   /**
    * 批量获取数据
    */
-  getBatch(ids: string[]): T[] {
+  getBatch(ids: string[]): Map<string, T> {
     return super.getBatch(ids);
   }
 

@@ -8,9 +8,9 @@ import type {
   BookPage,
   BookPageState,
   BookQueryOptions,
-  BookQueryResult,
-  QueryCondition
-} from '../query/types.js';
+  BookQueryResult
+} from './types.js';
+import type { QueryCondition } from '../query/types.js';
 import { DataCache } from '../cache/data-cache.js';
 import { IndexCache } from '../cache/index-cache.js';
 

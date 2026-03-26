@@ -8,12 +8,12 @@ import type {
 } from '../types/video.js';
 import type {
   BookQueryOptions,
-  BookQueryResult
+  BookQueryResult,
+  VideoQueryCondition
 } from '../query-server/query/types.js';
-import type { VideoQueryCondition } from '../query-server/video/video-index-types.js';
-import { Platform } from '../types/base.js';
-import { VideoBookManager } from '../query-server/video/video-book-manager.js';
-import { VideoQueryService } from '../query-server/video/video-query-service.js';
+import { Platform, PaginationParams, PaginationResult } from '../types/base.js';
+import { VideoBookManager, type IVideoRepository } from '../query-server/book/video-book-manager.js';
+import { VideoQueryService } from '../query-server/query/video-query-service.js';
 import { VideoRepository as VideoRepositoryImpl } from '../implementations/video-repository.impl.js';
 
 /**
@@ -23,13 +23,11 @@ export class VideoRepository {
   private bookManager: VideoBookManager;
   private queryService: VideoQueryService;
   private repository: VideoRepositoryImpl;
-  private dataCache: import('../query-server/cache/data-cache.js').DataCache<Video>;
 
   constructor() {
     this.repository = new VideoRepositoryImpl();
     this.bookManager = new VideoBookManager(this.repository);
     this.queryService = new VideoQueryService();
-    this.dataCache = this.bookManager.getDataCache();
   }
 
   /**
@@ -42,13 +40,7 @@ export class VideoRepository {
     queryCondition: VideoQueryCondition,
     options: BookQueryOptions = {}
   ): Promise<string> {
-    const resultIds = await this.queryService.queryVideoIds(queryCondition);
-    const book = this.bookManager.createBook(
-      `video:${JSON.stringify(queryCondition)}`,
-      queryCondition,
-      resultIds,
-      options
-    );
+    const book = await this.bookManager.createVideoQueryBook(queryCondition, options);
     return book.bookId;
   }
 
@@ -73,17 +65,8 @@ export class VideoRepository {
    * @returns 视频对象
    */
   async getVideo(videoId: string): Promise<Video | null> {
-    // 先从缓存获取
-    const cached = this.dataCache.get(videoId);
-    if (cached) {
-      return cached;
-    }
-
     // 从数据库获取
     const video = await this.repository.getVideo(videoId, Platform.BILIBILI);
-    if (video) {
-      this.dataCache.set(videoId, video);
-    }
     return video;
   }
 
@@ -93,28 +76,12 @@ export class VideoRepository {
    * @returns 视频对象Map
    */
   async getVideos(videoIds: string[]): Promise<Map<string, Video>> {
-    // 先从缓存获取
-    const cachedVideos = this.dataCache.getBatch(videoIds);
-    const uncachedIds = videoIds.filter(id =>
-      !cachedVideos.some((v: Video) => v.videoId === id)
-    );
-
-    // 从数据库获取未缓存的数据
-    let dbVideos: Video[] = [];
-    if (uncachedIds.length > 0) {
-      dbVideos = await this.repository.getVideos(uncachedIds, Platform.BILIBILI);
-      // 使用setBatch批量设置数据
-      const entries = new Map<string, Video>();
-      dbVideos.forEach(video => entries.set(video.videoId, video));
-      this.dataCache.setBatch(entries);
-    }
-
-    // 合并结果
+    // 从数据库获取
+    const videos = await this.repository.getVideos(videoIds, Platform.BILIBILI);
     const result = new Map<string, Video>();
-    [...cachedVideos, ...dbVideos].forEach(video => {
+    videos.forEach(video => {
       result.set(video.videoId, video);
     });
-
     return result;
   }
 
@@ -124,10 +91,7 @@ export class VideoRepository {
    */
   async upsertVideo(video: Video): Promise<void> {
     await this.repository.upsertVideo(video);
-    this.dataCache.set(video.videoId, video);
-
-    // 更新索引缓存
-    this.queryService.addVideo(video);
+    // 索引缓存和数据缓存由 VideoBookManager 管理，不需要手动更新
   }
 
   /**
@@ -136,13 +100,7 @@ export class VideoRepository {
    */
   async upsertVideos(videos: Video[]): Promise<void> {
     await this.repository.upsertVideos(videos);
-    // 使用setBatch批量设置数据
-    const entries = new Map<string, Video>();
-    videos.forEach(video => entries.set(video.videoId, video));
-    this.dataCache.setBatch(entries);
-
-    // 更新索引缓存
-    this.queryService.addVideos(videos);
+    // 索引缓存和数据缓存由 VideoBookManager 管理，不需要手动更新
   }
 
   /**
@@ -173,8 +131,8 @@ export class VideoRepository {
    * @param videoId 视频ID
    */
   async deleteVideo(videoId: string): Promise<void> {
-    await this.repository.deleteVideo(videoId,Platform.BILIBILI);
-    this.dataCache.delete(videoId);
+    await this.repository.deleteVideo(videoId, Platform.BILIBILI);
+    // 缓存由 VideoBookManager 管理，不需要手动删除
   }
 
   /**
@@ -182,8 +140,8 @@ export class VideoRepository {
    * @param videoIds 视频ID列表
    */
   async deleteVideos(videoIds: string[]): Promise<void> {
-    await this.repository.deleteVideos(videoIds,Platform.BILIBILI);
-    videoIds.forEach(id => this.dataCache.delete(id));
+    await this.repository.deleteVideos(videoIds, Platform.BILIBILI);
+    // 缓存由 VideoBookManager 管理，不需要手动删除
   }
 
   /**
@@ -207,7 +165,104 @@ export class VideoRepository {
   getCacheStats(): {
     dataCache: ReturnType<import('../query-server/cache/data-cache.js').DataCache<Video>['getStats']>;
     indexCache: { size: number };
+    videoIndexCache: { size: number };
   } {
     return this.bookManager.getCacheStats();
+  }
+
+  /**
+   * 获取创作者的视频列表（基于索引）
+   * @param creatorId 创作者ID
+   * @param platform 平台类型
+   * @param pagination 分页参数
+   * @returns 分页结果
+   */
+  async getCreatorVideos(
+    creatorId: string,
+    platform: Platform,
+    pagination: PaginationParams
+  ): Promise<PaginationResult<Video>> {
+    return this.repository.getCreatorVideos(creatorId, platform, pagination);
+  }
+
+  /**
+   * 获取指定平台的视频列表（基于索引）
+   * @param platform 平台类型
+   * @param pagination 分页参数
+   * @returns 分页结果
+   */
+  async getVideosByPlatform(
+    platform: Platform,
+    pagination: PaginationParams
+  ): Promise<PaginationResult<Video>> {
+    return this.repository.getVideosByPlatform(platform, pagination);
+  }
+
+  /**
+   * 更新视频标签
+   * @param videoId 视频ID
+   * @param platform 平台类型
+   * @param tags 标签ID数组
+   */
+  async updateVideoTags(videoId: string, platform: Platform, tags: string[]): Promise<void> {
+    await this.repository.updateVideoTags(videoId, platform, tags);
+    // 缓存由 VideoBookManager 管理，不需要手动更新
+  }
+
+  /**
+   * 更新视频封面图片（使用 ImageRepository）
+   * @param videoId 视频ID
+   * @param platform 平台类型
+   * @param imageBlob 图片 Blob 数据
+   * @param url 图片URL（可选，用于判断是否为同一图片）
+   */
+  async updateVideoPicture(
+    videoId: string,
+    platform: Platform,
+    imageBlob: Blob,
+    url?: string
+  ): Promise<void> {
+    await this.repository.updateVideoPicture(videoId, platform, imageBlob, url);
+    // 缓存由 VideoBookManager 管理，不需要手动更新
+  }
+
+  /**
+   * 获取视频封面图片
+   * @param videoId 视频ID
+   * @param platform 平台类型
+   * @returns 图片 Blob 数据，不存在返回 null
+   */
+  async getVideoPicture(videoId: string, platform: Platform): Promise<Blob | null> {
+    return this.repository.getVideoPicture(videoId, platform);
+  }
+
+  /**
+   * 标记视频为失效
+   * @param videoId 视频ID
+   * @param platform 平台类型
+   */
+  async markVideoAsInvalid(videoId: string, platform: Platform): Promise<void> {
+    await this.repository.markVideoAsInvalid(videoId, platform);
+    // 缓存由 VideoBookManager 管理，不需要手动删除
+  }
+
+  /**
+   * 批量标记视频为失效
+   * @param videoIds 视频ID数组
+   * @param platform 平台类型
+   */
+  async markVideosAsInvalid(videoIds: string[], platform: Platform): Promise<void> {
+    await this.repository.markVideosAsInvalid(videoIds, platform);
+    // 缓存由 VideoBookManager 管理，不需要手动删除
+  }
+
+  /**
+   * 清理失效视频（联动删除关联的封面图片）
+   * @returns 清理的视频数量
+   */
+  async cleanupInvalidVideos(): Promise<number> {
+    const count = await this.repository.cleanupInvalidVideos();
+    // 缓存由 VideoBookManager 管理，不需要手动清空
+    return count;
   }
 }
