@@ -40,7 +40,7 @@ export interface CreatorTagWeight {
 export interface Creator {
   /**
    * 创作者唯一ID
-   * 在平台内唯一，结合platform使用
+   * 全局唯一，无需结合platform使用
    * bili是数字字符串,将会自动转化为数字id,youtube暂时不考虑支持了
    */
   creatorId: ID;

@@ -46,27 +46,34 @@ export class CreatorRepository {
 
   /**
    * 获取单个创作者信息
-   * 基于复合索引(creatorId+platform)的查询
+   * 基于主键ID的查询
    */
-  async getCreator(creatorId: ID, platform: Platform): Promise<Creator | null> {
+  async getCreator(creatorId: ID): Promise<Creator | null> {
     const creators = await DBUtils.getByIndex<Creator>(
       STORE_NAMES.CREATORS,
       'creatorId',
       creatorId
     );
-    return creators.find(c => c.platform === platform) || null;
+    return creators.length > 0 ? creators[0] : null;
   }
 
   /**
    * 批量获取多个创作者信息
    * 基于主键索引的批量查询
    */
-  async getCreators(creatorIds: ID[], platform: Platform): Promise<Creator[]> {
-    const allCreators = await DBUtils.getBatch<Creator>(
+  async getCreators(creatorIds: ID[]): Promise<Creator[]> {
+    return await DBUtils.getBatch<Creator>(
       STORE_NAMES.CREATORS,
       creatorIds
     );
-    return allCreators.filter(c => c.platform === platform);
+  }
+
+  /**
+   * 获取所有创作者
+   * 仅用于数据导出等场景
+   */
+  async getAll(): Promise<Creator[]> {
+    return await DBUtils.getAll<Creator>(STORE_NAMES.CREATORS);
   }
 
   /**
@@ -198,8 +205,8 @@ export class CreatorRepository {
    * 更新创作者关注状态
    * 先查询再更新，基于主键索引
    */
-  async updateFollowStatus(creatorId: ID, platform: Platform, isFollowing: number): Promise<void> {
-    const creator = await this.getCreator(creatorId, platform);
+  async updateFollowStatus(creatorId: ID, isFollowing: number): Promise<void> {
+    const creator = await this.getCreator(creatorId);
     if (!creator) {
       throw new Error(`Creator not found: ${creatorId}`);
     }
@@ -219,10 +226,9 @@ export class CreatorRepository {
    */
   async updateTagWeights(
     creatorId: ID,
-    platform: Platform,
     tagWeights: Creator['tagWeights']
   ): Promise<void> {
-    const creator = await this.getCreator(creatorId, platform);
+    const creator = await this.getCreator(creatorId);
     if (!creator) {
       throw new Error(`Creator not found: ${creatorId}`);
     }
@@ -254,11 +260,10 @@ export class CreatorRepository {
   /**
    * 获取创作者的手动标签ID列表
    * @param creatorId 创作者ID
-   * @param platform 平台类型
    * @returns 用户手动添加的标签ID列表
    */
-  async getUPManualTags(creatorId: ID, platform: Platform): Promise<ID[]> {
-    const creator = await this.getCreator(creatorId, platform);
+  async getUPManualTags(creatorId: ID): Promise<ID[]> {
+    const creator = await this.getCreator(creatorId);
     if (!creator) {
       return [];
     }
@@ -272,7 +277,7 @@ export class CreatorRepository {
    * 删除创作者
    * 基于主键索引的删除操作
    */
-  async deleteCreator(creatorId: ID, platform: Platform): Promise<void> {
+  async deleteCreator(creatorId: ID): Promise<void> {
     await DBUtils.delete(STORE_NAMES.CREATORS, creatorId);
   }
 
@@ -280,8 +285,8 @@ export class CreatorRepository {
    * 标记创作者为已注销
    * 先查询再更新，基于主键索引
    */
-  async markCreatorAsLogout(creatorId: ID, platform: Platform): Promise<void> {
-    const creator = await this.getCreator(creatorId, platform);
+  async markCreatorAsLogout(creatorId: ID): Promise<void> {
+    const creator = await this.getCreator(creatorId);
     if (!creator) {
       throw new Error(`Creator not found: ${creatorId}`);
     }
@@ -322,8 +327,8 @@ export class CreatorRepository {
    * 更新创作者头像URL
    * 先查询再更新，基于主键索引
    */
-  async updateAvatarUrl(creatorId: ID, platform: Platform, avatarUrl: string): Promise<void> {
-    const creator = await this.getCreator(creatorId, platform);
+  async updateAvatarUrl(creatorId: ID, avatarUrl: string): Promise<void> {
+    const creator = await this.getCreator(creatorId);
     if (!creator) {
       throw new Error(`Creator not found: ${creatorId}`);
     }
@@ -340,9 +345,9 @@ export class CreatorRepository {
    * 获取创作者头像二进制数据
    * 如果本地没有头像数据，会尝试从URL下载并存储
    */
-  async getAvatarBinary(creatorId: ID, platform: Platform): Promise<Blob | null> {
+  async getAvatarBinary(creatorId: ID): Promise<Blob | null> {
     // 先获取创作者信息
-    const creator = await this.getCreator(creatorId, platform);
+    const creator = await this.getCreator(creatorId);
     if (!creator) {
       return null;
     }
@@ -372,7 +377,7 @@ export class CreatorRepository {
           const blob = await response.blob();
           
           // 存储二进制数据
-          await this.saveAvatarBinary(creatorId, platform, blob);
+          await this.saveAvatarBinary(creatorId, blob);
           
           return blob;
         }
@@ -388,9 +393,9 @@ export class CreatorRepository {
    * 保存创作者头像二进制数据
    * 将二进制数据存储到images_data表中，并更新creator表的avatar字段
    */
-  async saveAvatarBinary(creatorId: ID, platform: Platform, avatarBlob: Blob): Promise<void> {
+  async saveAvatarBinary(creatorId: ID, avatarBlob: Blob): Promise<void> {
     // 先获取创作者信息
-    const creator = await this.getCreator(creatorId, platform);
+    const creator = await this.getCreator(creatorId);
     if (!creator) {
       throw new Error(`Creator not found: ${creatorId}`);
     }
@@ -417,9 +422,9 @@ export class CreatorRepository {
    * 删除创作者头像二进制数据
    * 同时清除images_data表中的对应数据
    */
-  async deleteAvatarBinary(creatorId: ID, platform: Platform): Promise<void> {
+  async deleteAvatarBinary(creatorId: ID): Promise<void> {
     // 先获取创作者信息
-    const creator = await this.getCreator(creatorId, platform);
+    const creator = await this.getCreator(creatorId);
     if (!creator) {
       throw new Error(`Creator not found: ${creatorId}`);
     }

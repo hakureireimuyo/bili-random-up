@@ -13,18 +13,6 @@ export interface CacheEntry<T> {
 }
 
 /**
- * 标签缓存条目
- */
-export interface TagCacheEntry {
-  /** 标签ID到ID集合的映射 */
-  tagToIds: Map<string, Set<string>>;
-  /** 最后更新时间 */
-  lastUpdate: number;
-  /** 总数量 */
-  totalCount: number;
-}
-
-/**
  * 缓存配置选项
  */
 export interface CacheOptions {
@@ -41,7 +29,7 @@ export interface CacheOptions {
  * 实现LRU（最近最少使用）策略的泛型缓存
  */
 export class BaseCache<T> {
-  protected cache: Map<string, CacheEntry<T>> = new Map();
+  protected cache: Map<number, CacheEntry<T>> = new Map();
   protected maxSize: number;
   protected maxAge: number;
   protected cleanupRatio: number;
@@ -55,7 +43,7 @@ export class BaseCache<T> {
   /**
    * 设置数据
    */
-  set(key: string, data: T): void {
+  set(key: number, data: T): void {
     // 如果缓存已满，执行清理
     if (this.cache.size >= this.maxSize) {
       this.cleanup();
@@ -81,18 +69,18 @@ export class BaseCache<T> {
   /**
    * 批量设置数据
    */
-  setBatch(entries: Map<string, T> | Record<string, T>): void {
+  setBatch(entries: Map<number, T> | Record<number, T>): void {
     if (entries instanceof Map) {
       entries.forEach((data, key) => this.set(key, data));
     } else {
-      Object.entries(entries).forEach(([key, data]) => this.set(key, data));
+      Object.entries(entries).forEach(([key, data]) => this.set(key as unknown as number, data));
     }
   }
 
   /**
    * 获取数据
    */
-  get(key: string): T | undefined {
+  get(key: number): T | undefined {
     const entry = this.cache.get(key);
     if (entry) {
       // 检查是否过期
@@ -113,8 +101,8 @@ export class BaseCache<T> {
   /**
    * 批量获取数据
    */
-  getBatch(keys: string[]): Map<string, T> {
-    const result = new Map<string, T>();
+  getBatch(keys: number[]): Map<number, T> {
+    const result = new Map<number, T>();
     keys.forEach(key => {
       const value = this.get(key);
       if (value !== undefined) {
@@ -151,14 +139,14 @@ export class BaseCache<T> {
   /**
    * 删除数据
    */
-  delete(key: string): boolean {
+  delete(key: number): boolean {
     return this.cache.delete(key);
   }
 
   /**
    * 批量删除数据
    */
-  deleteBatch(keys: string[]): number {
+  deleteBatch(keys: number[]): number {
     let count = 0;
     keys.forEach(key => {
       if (this.cache.delete(key)) {
@@ -185,7 +173,7 @@ export class BaseCache<T> {
   /**
    * 检查数据是否存在
    */
-  has(key: string): boolean {
+  has(key: number): boolean {
     const entry = this.cache.get(key);
     if (!entry) return false;
 
@@ -202,15 +190,15 @@ export class BaseCache<T> {
   /**
    * 获取未缓存的键列表
    */
-  getUncachedKeys(keys: string[]): string[] {
+  getUncachedKeys(keys: number[]): number[] {
     return keys.filter(key => !this.has(key));
   }
 
   /**
    * 批量检查缓存状态
    */
-  getCachedStatus(keys: string[]): Map<string, boolean> {
-    const result = new Map<string, boolean>();
+  getCachedStatus(keys: number[]): Map<number, boolean> {
+    const result = new Map<number, boolean>();
     keys.forEach(key => {
       result.set(key, this.has(key));
     });
@@ -254,7 +242,7 @@ export class BaseCache<T> {
   /**
    * 获取所有键
    */
-  keys(): string[] {
+  keys(): number[] {
     return Array.from(this.cache.keys());
   }
 
@@ -271,7 +259,7 @@ export class BaseCache<T> {
   /**
    * 获取所有条目
    */
-  entries(): [string, T][] {
+  entries(): [number, T][] {
     const now = Date.now();
     return Array.from(this.cache.entries())
       .filter(([_, entry]) => now - entry.lastAccessTime <= this.maxAge)

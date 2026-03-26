@@ -1,54 +1,82 @@
 /**
  * 查询引擎模块
- * 实现高性能的索引查询逻辑
+ * 实现高性能的索引查询逻辑（纯函数）
  */
 
-import type { CreatorIndex, IndexQuery, TagExpression } from './types.js';
+import type { CreatorIndex, TagExpression } from './types.js';
 import { TagFilterEngine } from './tag-filter-engine.js';
+import { ID } from '../../types/base.js';
 
 /**
- * 查询引擎类
+ * 根据名称关键词过滤索引（纯函数）
  */
-export class QueryEngine {
-  /**
-   * 根据查询条件过滤索引
-   */
-  static query(indexes: CreatorIndex[], query: IndexQuery): CreatorIndex[] {
-    let result = indexes;
-
-    // 关键词过滤
-    if (query.keyword && query.keyword.trim()) {
-      const keyword = query.keyword.toLowerCase().trim();
-      result = result.filter(index =>
-        index.name.toLowerCase().includes(keyword)
-      );
-    }
-
-    // 关注状态过滤
-    if (query.isFollowing !== undefined) {
-      result = result.filter(index => index.isFollowing === query.isFollowing);
-    }
-
-    return result;
+export function filterByName(indexes: CreatorIndex[], keyword: string): CreatorIndex[] {
+  if (!keyword || !keyword.trim()) {
+    return indexes;
   }
 
-  /**
-   * 根据标签表达式过滤索引
-   */
-  static queryByTagExpressions(
-    indexes: CreatorIndex[],
-    expressions: TagExpression[]
-  ): string[] {
-    if (expressions.length === 0) {
-      return indexes.map(index => index.creatorId);
-    }
+  const lowerKeyword = keyword.toLowerCase().trim();
+  return indexes.filter(index =>
+    index.name.toLowerCase().includes(lowerKeyword)
+  );
+}
 
-    // 使用TagFilterEngine执行标签过滤
-    const tagFilterEngine = new TagFilterEngine();
+/**
+ * 根据关注状态过滤索引（纯函数）
+ */
+export function filterByFollowing(indexes: CreatorIndex[], isFollowing: 0 | 1): CreatorIndex[] {
+  const following = isFollowing === 1;
+  return indexes.filter(index => index.isFollowing === following);
+}
 
+/**
+ * 根据标签表达式过滤索引（纯函数）
+ */
+export function filterByTags(
+  indexes: CreatorIndex[],
+  expressions: TagExpression[]
+): ID[] {
+  if (expressions.length === 0) {
+    return indexes.map(index => index.creatorId);
+  }
+
+  // 构建标签到ID集合的映射
+  const tagToIds = new Map<ID, Set<ID>>();
+  indexes.forEach(index => {
+    index.tags.forEach(tagId => {
+      if (!tagToIds.has(tagId)) {
+        tagToIds.set(tagId, new Set());
+      }
+      tagToIds.get(tagId)!.add(index.creatorId);
+    });
+  });
+
+  // 使用TagFilterEngine执行过滤
+  const result = TagFilterEngine.filter(tagToIds, expressions);
+  return Array.from(result.matchedIds);
+}
+
+/**
+ * 组合查询：同时使用关键词和标签表达式（纯函数）
+ */
+export function filterCombined(
+  indexes: CreatorIndex[],
+  keyword?: string,
+  expressions?: TagExpression[],
+  isFollowing?: 0 | 1
+): ID[] {
+  let result = indexes;
+
+  // 1. 关注状态过滤（优先级最高）
+  if (isFollowing !== undefined) {
+    result = filterByFollowing(result, isFollowing);
+  }
+
+  // 2. 标签过滤（优先级次之）
+  if (expressions && expressions.length > 0) {
     // 构建标签到ID集合的映射
-    const tagToIds = new Map<string, Set<string>>();
-    indexes.forEach(index => {
+    const tagToIds = new Map<ID, Set<ID>>();
+    result.forEach(index => {
       index.tags.forEach(tagId => {
         if (!tagToIds.has(tagId)) {
           tagToIds.set(tagId, new Set());
@@ -57,44 +85,18 @@ export class QueryEngine {
       });
     });
 
-    // 执行过滤
-    const result = tagFilterEngine.filter(tagToIds, expressions);
-    return Array.from(result.matchedIds);
+    // 使用TagFilterEngine执行过滤
+    const filterResult = TagFilterEngine.filter(tagToIds, expressions);
+
+    // 转换回CreatorIndex数组
+    const filteredIds = Array.from(filterResult.matchedIds);
+    result = result.filter(index => filteredIds.includes(index.creatorId));
   }
 
-  /**
-   * 组合查询：同时使用关键词和标签表达式
-   */
-  static queryCombined(
-    indexes: CreatorIndex[],
-    query: IndexQuery,
-    expressions: TagExpression[]
-  ): string[] {
-    // 先用关键词和关注状态过滤
-    let result = this.query(indexes, query);
-
-    // 如果有标签表达式，再进行标签过滤
-    if (expressions.length > 0) {
-      // 构建标签到ID集合的映射
-      const tagToIds = new Map<string, Set<string>>();
-      result.forEach(index => {
-        index.tags.forEach(tagId => {
-          if (!tagToIds.has(tagId)) {
-            tagToIds.set(tagId, new Set());
-          }
-          tagToIds.get(tagId)!.add(index.creatorId);
-        });
-      });
-
-      // 使用TagFilterEngine执行过滤
-      const tagFilterEngine = new TagFilterEngine();
-      const filterResult = tagFilterEngine.filter(tagToIds, expressions);
-
-      // 转换回CreatorIndex数组
-      const filteredIds = Array.from(filterResult.matchedIds);
-      result = result.filter(index => filteredIds.includes(index.creatorId));
-    }
-
-    return result.map(index => index.creatorId);
+  // 3. 名称过滤（优先级最低）
+  if (keyword) {
+    result = filterByName(result, keyword);
   }
+
+  return result.map(index => index.creatorId);
 }

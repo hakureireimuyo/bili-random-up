@@ -9,12 +9,24 @@ import { BaseCache, type CacheOptions } from './base-cache.js';
  * 数据缓存类
  * 继承BaseCache，提供数据缓存功能
  * 支持泛型，可以存储任意类型的数据
+ * 特性：
+ * - 存储完整数据（如Creator、Video）
+ * - 包含过期时间（默认1小时）
+ * - 使用LRU策略管理容量
+ * - 支持批量操作
+ * - 全局单例，相同数据类型唯一
+ * 
+ * 容量管理：
+ * - 最小支持50条数据
+ * - 最多支持1000条数据
+ * - 使用数量限制而非实际占用限制
  */
 export class DataCache<T> extends BaseCache<T> {
   constructor(options: CacheOptions = {}) {
-    // 默认缓存500个
+    // 默认缓存500个，限制在50-1000之间
+    const maxSize = options.maxSize ?? 500;
     super({
-      maxSize: options.maxSize ?? 500,
+      maxSize: Math.max(50, Math.min(1000, maxSize)),
       maxAge: options.maxAge ?? 3600000,
       cleanupRatio: options.cleanupRatio ?? 0.2
     });
@@ -24,7 +36,7 @@ export class DataCache<T> extends BaseCache<T> {
    * 设置数据
    * @override
    */
-  set(key: string, data: T): void {
+  set(key: number, data: T): void {
     super.set(key, data);
   }
 
@@ -32,35 +44,35 @@ export class DataCache<T> extends BaseCache<T> {
    * 批量设置数据
    * @override
    */
-  setBatch(entries: Map<string, T> | Record<string, T>): void {
+  setBatch(entries: Map<number, T> | Record<number, T>): void {
     super.setBatch(entries);
   }
 
   /**
    * 获取数据
    */
-  get(id: string): T | undefined {
+  get(id: number): T | undefined {
     return super.get(id);
   }
 
   /**
    * 批量获取数据
    */
-  getBatch(ids: string[]): Map<string, T> {
+  getBatch(ids: number[]): Map<number, T> {
     return super.getBatch(ids);
   }
 
   /**
    * 获取未缓存的ID列表
    */
-  getUncachedIds(ids: string[]): string[] {
+  getUncachedIds(ids: number[]): number[] {
     return super.getUncachedKeys(ids);
   }
 
   /**
    * 批量检查缓存状态
    */
-  getCachedStatus(ids: string[]): Map<string, boolean> {
+  getCachedStatus(ids: number[]): Map<number, boolean> {
     return super.getCachedStatus(ids);
   }
 

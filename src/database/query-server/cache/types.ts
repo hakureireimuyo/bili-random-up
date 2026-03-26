@@ -3,7 +3,7 @@
  * 定义视频索引、创作者索引等轻量级数据结构
  */
 
-import type { Platform } from '../types/base.js';
+import type { Platform, ID } from '../../types/base.js';
 
 /**
  * 时长范围查询条件
@@ -20,7 +20,7 @@ export interface DurationRange {
  */
 export interface TagExpression {
   /** 标签ID或标签ID列表（用于OR操作） */
-  tagId: string | string[];
+  tagId: ID | ID[];
   /** 操作符 */
   operator: 'AND' | 'OR' | 'NOT';
 }
@@ -31,11 +31,11 @@ export interface TagExpression {
  */
 export interface TagMapping {
   /** 创作者ID集合 */
-  creatorIds: Set<string>;
+  creatorIds: Set<ID>;
   /** 视频ID集合 */
-  videoIds: Set<string>;
+  videoIds: Set<ID>;
   /** 动态扩展其他数据类型 */
-  [key: string]: Set<string>;
+  [key: string]: Set<ID>;
 }
 
 /**
@@ -43,7 +43,7 @@ export interface TagMapping {
  */
 export interface TagCacheEntry {
   /** 标签ID */
-  tagId: string;
+  tagId: ID;
   /** 标签映射到多种数据类型的ID集合 */
   mapping: TagMapping;
   /** 最后更新时间 */
@@ -58,11 +58,13 @@ export interface TagCacheEntry {
  */
 export interface VideoIndex {
   /** 视频ID */
-  videoId: string;
+  videoId: ID;
   /** 平台类型 */
   platform: Platform;
+  /** 平台中唯一编号 */
+  bv:string;
   /** 创作者ID */
-  creatorId: string;
+  creatorId: ID;
   /** 视频标题 */
   title: string;
   /** 视频时长（秒） */
@@ -70,7 +72,7 @@ export interface VideoIndex {
   /** 视频发布时间 */
   publishTime: number;
   /** 视频标签列表 */
-  tags: string[];
+  tags: ID[];
   /** 是否失效 */
   isInvalid?: boolean;
 }
@@ -84,7 +86,7 @@ export interface VideoQueryCondition {
   /** 标题关键词（可选） */
   keyword?: string;
   /** 创作者ID列表（可选） */
-  creatorIds?: string[];
+  creatorIds?: ID[];
   /** 创作者名称（可选，需要通过创作者索引查询） */
   creatorName?: string;
   /** 标签表达式列表（可选） */
@@ -106,11 +108,11 @@ export interface VideoQueryCondition {
  */
 export interface CreatorIndex {
   /** 创作者ID */
-  creatorId: string;
+  creatorId: ID;
   /** 创作者名称 */
   name: string;
   /** 标签ID列表 */
-  tags: string[];
+  tags: ID[];
   /** 是否已关注 */
   isFollowing: boolean;
 }

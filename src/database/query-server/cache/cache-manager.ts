@@ -5,9 +5,9 @@
 
 import { IndexCache } from './index-cache.js';
 import { DataCache } from './data-cache.js';
-import { BaseCache, type CacheOptions, type TagCacheEntry } from './base-cache.js';
-import type { CreatorIndex } from '../query/types.js';
-import type { VideoIndex } from '../query/types.js';
+import { TagCache } from './tag-cache.js';
+import type { CreatorIndex } from './types.js';
+import type { VideoIndex } from './types.js';
 
 /**
  * 全局缓存管理器类
@@ -20,28 +20,24 @@ export class CacheManager {
   private indexCache: IndexCache<CreatorIndex>;
 
   // 数据缓存（存储完整数据）
-  private dataCache: DataCache<any>;
+  private dataCache: DataCache<unknown>;
 
-  // 标签缓存（共享）
-  private tagCache: BaseCache<TagCacheEntry>;
+  // 标签缓存（使用SortedArray实现）
+  private tagCache: TagCache;
 
   // 视频索引缓存
   private videoIndexCache: IndexCache<VideoIndex>;
 
   private constructor() {
     // 初始化所有缓存单例
-    this.indexCache = new IndexCache<CreatorIndex>(10000);
+    this.indexCache = new IndexCache<CreatorIndex>();
     this.dataCache = new DataCache<any>({
       maxSize: 2000,
       maxAge: 3600000,
       cleanupRatio: 0.2
     });
-    this.tagCache = new BaseCache<TagCacheEntry>({
-      maxSize: 100,
-      maxAge: 3600000,
-      cleanupRatio: 0.2
-    });
-    this.videoIndexCache = new IndexCache<VideoIndex>(10000);
+    this.tagCache = new TagCache();
+    this.videoIndexCache = new IndexCache<VideoIndex>();
   }
 
   /**
@@ -71,7 +67,7 @@ export class CacheManager {
   /**
    * 获取标签缓存
    */
-  getTagCache(): BaseCache<TagCacheEntry> {
+  getTagCache(): TagCache {
     return this.tagCache;
   }
 
@@ -97,8 +93,8 @@ export class CacheManager {
    */
   getStats(): {
     indexCache: { size: number };
-    dataCache: ReturnType<DataCache<any>['getStats']>;
-    tagCache: ReturnType<BaseCache<TagCacheEntry>['getStats']>;
+    dataCache: ReturnType<DataCache<unknown>['getStats']>;
+    tagCache: ReturnType<TagCache['getStats']>;
     videoIndexCache: { size: number };
   } {
     return {

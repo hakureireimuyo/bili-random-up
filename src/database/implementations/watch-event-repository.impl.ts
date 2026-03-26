@@ -5,7 +5,6 @@
 
 // 接口已移除，直接实现功能
 import { WatchEvent } from '../types/behavior.js';
-import { Platform } from '../types/base.js';
 import { DBUtils, STORE_NAMES } from '../indexeddb/index.js';
 import { generateId } from './id-generator.js';
 import {ID} from '../types/base.js'

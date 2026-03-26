@@ -1,20 +1,19 @@
 /**
- * 查询服务模块
- * 实现通用查询逻辑，与Book和页面无关
+ * 查询服务模块 - 调度层
+ * 协调查询流程，调用纯函数执行查询
  */
 
-import type { QueryCondition } from './types.js';
+import type { QueryCondition, QueryOutput, QueryStats, CreatorIndex } from './types.js';
 import type { CompositeQueryCondition } from './composite-query-service.js';
-import type { CreatorIndex } from './types.js';
 import { IndexCache } from '../cache/index-cache.js';
 import { CompositeQueryService } from './composite-query-service.js';
 import { CreatorRepository } from '../../implementations/creator-repository.impl.js';
 import { Platform } from '../../types/base.js';
 import { CacheManager } from '../cache/cache-manager.js';
-
+import { ID } from '../../types/base.js';
 /**
- * 查询服务类
- * 负责执行查询逻辑，返回结果ID列表
+ * 查询服务类 - 调度层
+ * 负责协调查询流程，调用纯函数执行查询
  * 与Book和页面无关，是通用工具
  */
 export class QueryService {
@@ -38,7 +37,7 @@ export class QueryService {
    * @param queryCondition 查询条件
    * @returns 结果ID列表
    */
-  async queryResultIds(queryCondition: QueryCondition): Promise<string[]> {
+  async queryResultIds(queryCondition: QueryCondition): Promise<ID[]> {
     // 确保索引缓存已加载
     if (this.indexCache.size() === 0) {
       await this.loadIndexCache();
@@ -46,9 +45,30 @@ export class QueryService {
 
     const allIndexes = this.indexCache.values();
     const compositeCond = queryCondition as unknown as CompositeQueryCondition;
-    const cacheKey = 'creator:bilibili';
 
-    return this.compositeQueryService.queryIds(allIndexes, compositeCond, cacheKey);
+    return this.compositeQueryService.queryIds(allIndexes, compositeCond);
+  }
+
+  /**
+   * 执行查询并返回完整结果
+   * @param queryCondition 查询条件
+   * @returns 查询结果
+   */
+  async query(queryCondition: QueryCondition): Promise<QueryOutput> {
+    // 确保索引缓存已加载
+    if (this.indexCache.size() === 0) {
+      await this.loadIndexCache();
+    }
+
+    const allIndexes = this.indexCache.values();
+    const compositeCond = queryCondition as unknown as CompositeQueryCondition;
+
+    const result = this.compositeQueryService.query(allIndexes, compositeCond);
+
+    return {
+      matchedIds: result.indexes.map(index => index.creatorId),
+      stats: result.stats
+    };
   }
 
   /**
@@ -63,7 +83,7 @@ export class QueryService {
       isFollowing: creator.isFollowing === 1
     }));
     // 将数组转换为Map
-    const entries = new Map<string, CreatorIndex>();
+    const entries = new Map<ID, CreatorIndex>();
     indexes.forEach(index => entries.set(index.creatorId, index));
     this.indexCache.setBatch(entries);
   }

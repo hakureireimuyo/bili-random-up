@@ -1,31 +1,36 @@
 /**
  * 基础书管理器类
  * 实现书页机制的核心功能，可被所有数据类型复用
+ *
+ * 核心职责：
+ * - 作为Book工厂，负责创建Book实例
+ * - 管理Book实例的生命周期
+ * - 提供Book的注册和删除功能
  */
 
-import type {
-  Book,
-  BookPage,
-  BookPageState,
-  BookQueryOptions,
-  BookQueryResult
-} from './types.js';
+import { Book } from './book.js';
 import type { QueryCondition } from '../query/types.js';
+import type { BookQueryOptions } from './types.js';
 import { DataCache } from '../cache/data-cache.js';
 import { IndexCache } from '../cache/index-cache.js';
 
 /**
  * 数据仓库接口
  * 定义数据仓库必须实现的方法
+ * 职责：从Cache或Database获取完整数据
  */
 export interface IDataRepository<T> {
   /**
    * 根据ID获取单个数据
+   * 优先从Cache获取，未命中则从Database获取
+   * @param id - 全局唯一的ID
    */
   getById(id: string): Promise<T | null>;
 
   /**
    * 根据ID列表批量获取数据
+   * 优先从Cache获取，未命中的从Database获取
+   * @param ids - 全局唯一的ID列表
    */
   getByIds(ids: string[]): Promise<T[]>;
 
@@ -52,8 +57,25 @@ export interface IIndexConverter<T, I> {
 }
 
 /**
+ * 查询服务接口
+ * 定义查询服务必须实现的方法
+ * 职责：根据查询条件返回索引ID列表
+ */
+export interface IQueryService<I> {
+  /**
+   * 根据查询条件获取索引ID列表
+   */
+  queryIds(condition: QueryCondition): Promise<string[]>;
+}
+
+/**
  * 基础书管理器类
- * 实现书页机制的核心功能，管理查询结果和分页数据
+ * 作为Book工厂，负责创建和管理Book实例的生命周期
+ *
+ * 设计原则：
+ * - BookManager只负责创建和管理Book实例
+ * - Book自己负责获取数据和管理分页
+ * - Book生命周期与页面生命周期一致
  */
 export class BaseBookManager<T, I> {
   protected books: Map<string, Book<T>> = new Map();
@@ -61,50 +83,46 @@ export class BaseBookManager<T, I> {
   protected indexCache: IndexCache<I>;
   protected repository: IDataRepository<T>;
   protected indexConverter: IIndexConverter<T, I>;
+  protected queryService: IQueryService<I>;
 
   constructor(
     dataCache: DataCache<T>,
     indexCache: IndexCache<I>,
     repository: IDataRepository<T>,
-    indexConverter: IIndexConverter<T, I>
+    indexConverter: IIndexConverter<T, I>,
+    queryService: IQueryService<I>
   ) {
     this.dataCache = dataCache;
     this.indexCache = indexCache;
     this.repository = repository;
     this.indexConverter = indexConverter;
+    this.queryService = queryService;
   }
 
   /**
    * 创建一本书
+   * 通过QueryService获取索引ID列表
    */
   async createBook(
     queryCondition: QueryCondition,
-    options: BookQueryOptions = {},
-    queryExecutor?: (condition: QueryCondition, allIndexes: I[]) => string[]
+    options: BookQueryOptions = {}
   ): Promise<Book<T>> {
     const pageSize = options.pageSize || 20;
 
     // 生成书ID
     const bookId = this.generateBookId(queryCondition);
 
-    // 获取结果ID列表
-    const resultIds = await this.queryResultIds(queryCondition, queryExecutor);
+    // 通过QueryService获取结果ID列表
+    const resultIds = await this.queryService.queryIds(queryCondition);
 
-    // 创建书
-    const book: Book<T> = {
+    // 创建Book实例
+    const book = new Book<T>(
       bookId,
       resultIds,
-      pages: new Map(),
-      state: {
-        currentPage: 0,
-        totalPages: Math.ceil(resultIds.length / pageSize),
-        pageSize,
-        totalRecords: resultIds.length
-      },
-      queryCondition,
-      createdAt: Date.now(),
-      lastAccessTime: Date.now()
-    };
+      this.repository,
+      this.queryService,
+      pageSize
+    );
 
     // 存储书
     this.books.set(bookId, book);
@@ -116,93 +134,7 @@ export class BaseBookManager<T, I> {
    * 获取书
    */
   getBook(bookId: string): Book<T> | undefined {
-    const book = this.books.get(bookId);
-    if (book) {
-      book.lastAccessTime = Date.now();
-    }
-    return book;
-  }
-
-  /**
-   * 获取书页数据
-   */
-  async getPage(
-    bookId: string,
-    page: number,
-    options: BookQueryOptions = {}
-  ): Promise<BookQueryResult<T>> {
-    const book = this.getBook(bookId);
-    if (!book) {
-      throw new Error(`Book not found: ${bookId}`);
-    }
-
-    const pageSize = options.pageSize || book.state.pageSize;
-    const totalPages = Math.ceil(book.resultIds.length / pageSize);
-
-    // 检查页码是否有效
-    if (page < 0 || page >= totalPages) {
-      throw new Error(`Invalid page number: ${page}. Total pages: ${totalPages}`);
-    }
-
-    // 更新当前页
-    book.state.currentPage = page;
-    book.state.totalPages = totalPages;
-    book.state.pageSize = pageSize;
-
-    // 获取或加载页数据
-    let bookPage = book.pages.get(page);
-    if (!bookPage || !bookPage.loaded) {
-      bookPage = await this.loadPage(book, page, pageSize);
-      book.pages.set(page, bookPage);
-    }
-
-    // 预加载下一页
-    if (options.preloadNext && page < totalPages - 1) {
-      const preloadCount = options.preloadCount || 1;
-      for (let i = 1; i <= preloadCount && page + i < totalPages; i++) {
-        const nextPage = page + i;
-        const nextPageData = book.pages.get(nextPage);
-        if (!nextPageData || !nextPageData.loaded) {
-          this.loadPage(book, nextPage, pageSize).then(page => {
-            book.pages.set(nextPage, page);
-          });
-        }
-      }
-    }
-
-    return {
-      items: bookPage.items,
-      state: { ...book.state },
-      bookId: book.bookId
-    };
-  }
-
-  /**
-   * 更新查询条件
-   */
-  async updateQueryCondition(
-    bookId: string,
-    newCondition: QueryCondition,
-    queryExecutor?: (condition: QueryCondition, allIndexes: I[]) => string[]
-  ): Promise<Book<T>> {
-    const book = this.getBook(bookId);
-    if (!book) {
-      throw new Error(`Book not found: ${bookId}`);
-    }
-
-    // 获取新的结果ID列表
-    const newResultIds = await this.queryResultIds(newCondition, queryExecutor);
-
-    // 更新书
-    book.resultIds = newResultIds;
-    book.queryCondition = newCondition;
-    book.state.totalRecords = newResultIds.length;
-    book.state.totalPages = Math.ceil(newResultIds.length / book.state.pageSize);
-    book.state.currentPage = 0;
-    book.pages.clear(); // 清空页缓存
-    book.lastAccessTime = Date.now();
-
-    return book;
+    return this.books.get(bookId);
   }
 
   /**
@@ -210,18 +142,6 @@ export class BaseBookManager<T, I> {
    */
   deleteBook(bookId: string): boolean {
     return this.books.delete(bookId);
-  }
-
-  /**
-   * 清理过期的书
-   */
-  cleanupExpiredBooks(maxAge: number = 3600000): void {
-    const now = Date.now();
-    for (const [bookId, book] of this.books.entries()) {
-      if (now - book.lastAccessTime > maxAge) {
-        this.books.delete(bookId);
-      }
-    }
   }
 
   /**
@@ -252,101 +172,10 @@ export class BaseBookManager<T, I> {
   }
 
   /**
-   * 加载页数据
-   */
-  protected async loadPage(
-    book: Book<T>,
-    page: number,
-    pageSize: number
-  ): Promise<BookPage<T>> {
-    const startIndex = page * pageSize;
-    const endIndex = Math.min(startIndex + pageSize, book.resultIds.length);
-    const pageIds = book.resultIds.slice(startIndex, endIndex);
-
-    // 从缓存获取数据（利用共享缓存）
-    const cachedData = this.dataCache.getBatch(pageIds);
-
-    // 使用getUncachedKeys方法获取未缓存的ID
-    const uncachedIds = this.dataCache.getUncachedKeys(pageIds);
-
-    // 从数据库获取未缓存的数据
-    let dbData: T[] = [];
-    if (uncachedIds.length > 0) {
-      dbData = await this.repository.getByIds(uncachedIds);
-      // 批量存入缓存
-      const entries = new Map<string, T>();
-      dbData.forEach(data => {
-        entries.set(this.indexConverter.getId(data), data);
-      });
-      this.dataCache.setBatch(entries);
-    }
-
-    // 合并数据，保持原始顺序
-    const items = pageIds.map(id => {
-      const cached = cachedData.find(d => this.indexConverter.getId(d) === id);
-      if (cached) return cached;
-      return dbData.find(d => this.indexConverter.getId(d) === id);
-    }).filter((d): d is T => d !== undefined);
-
-    return {
-      page,
-      items,
-      loaded: true,
-      loadTime: Date.now()
-    };
-  }
-
-  /**
-   * 查询结果ID列表
-   */
-  protected async queryResultIds(
-    queryCondition: QueryCondition,
-    queryExecutor?: (condition: QueryCondition, allIndexes: I[]) => string[]
-  ): Promise<string[]> {
-    // 确保索引缓存已加载
-    if (this.indexCache.size() === 0) {
-      await this.loadIndexCache();
-    }
-
-    const allIndexes = this.indexCache.values();
-
-    // 如果提供了自定义查询执行器，使用它
-    if (queryExecutor) {
-      return queryExecutor(queryCondition, allIndexes);
-    }
-
-    // 默认返回所有ID
-    return allIndexes.map(index => this.extractIdFromIndex(index));
-  }
-
-  /**
-   * 加载索引缓存
-   */
-  protected async loadIndexCache(): Promise<void> {
-    const allData = await this.repository.getAll();
-    const entries = new Map<string, I>();
-
-    allData.forEach(data => {
-      const index = this.indexConverter.toIndex(data);
-      entries.set(this.extractIdFromIndex(index), index);
-    });
-
-    this.indexCache.setBatch(entries);
-  }
-
-  /**
    * 生成书ID
    */
   protected generateBookId(condition: QueryCondition): string {
     // 子类可以重写此方法以实现自定义的书ID生成逻辑
     return JSON.stringify(condition);
-  }
-
-  /**
-   * 从索引中提取ID
-   */
-  protected extractIdFromIndex(index: I): string {
-    // 子类应该重写此方法
-    return index as unknown as string;
   }
 }

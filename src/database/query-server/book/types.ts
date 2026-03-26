@@ -3,8 +3,6 @@
  * 定义书、页、查询选项和结果等核心概念
  */
 
-import type { QueryCondition } from '../query/types.js';
-
 /**
  * 书页查询选项
  */
@@ -33,11 +31,12 @@ export interface BookPageState {
 
 /**
  * 书页数据
+ * 只存储索引数据，完整数据通过Repository获取
  */
 export interface BookPage<T> {
   /** 页码 */
   page: number;
-  /** 数据列表 */
+  /** 数据列表（从Repository获取的完整数据） */
   items: T[];
   /** 是否已加载 */
   loaded: boolean;
@@ -46,25 +45,13 @@ export interface BookPage<T> {
 }
 
 /**
- * 书
- * 管理查询结果和分页数据
+ * 书类型
+ * 只存储查询返回的索引数据，不存储完整对象
+ * 通过Repository获取完整数据
+ * 与前端页面数据显示容器绑定生命周期
+ * Book 类在 book.ts 中定义
  */
-export interface Book<T> {
-  /** 书的唯一标识 */
-  bookId: string;
-  /** 结果ID列表 */
-  resultIds: string[];
-  /** 页数据缓存 */
-  pages: Map<number, BookPage<T>>;
-  /** 当前状态 */
-  state: BookPageState;
-  /** 查询条件 */
-  queryCondition: QueryCondition;
-  /** 创建时间 */
-  createdAt: number;
-  /** 最后访问时间 */
-  lastAccessTime: number;
-}
+export type Book<T> = import('./book.js').Book<T>;
 
 /**
  * 书页查询结果
