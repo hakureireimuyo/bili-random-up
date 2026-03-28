@@ -11,6 +11,8 @@ import { TagManager } from "./TagManager.js";
 import { CategoryManager } from "./CategoryManager.js";
 import { FilterManager } from "./FilterManager.js";
 import type { StatsState } from "./types.js";
+import { themeManager } from "../../themes/theme-manager.js";
+import { refreshTagColors } from "../../utils/tag-utils.js";
 
 /**
  * 实例容器接口
@@ -106,6 +108,9 @@ class InstanceContainerImpl implements InstanceContainer {
 export class StatsManager {
   private container: InstanceContainerImpl;
   private initialized: boolean = false;
+  private readonly handleThemeChange = () => {
+    refreshTagColors();
+  };
 
   constructor(container?: InstanceContainerImpl) {
     this.container = container || InstanceContainerImpl.getInstance();
@@ -131,6 +136,7 @@ export class StatsManager {
       // 绑定事件
       this.bindPageActions();
       this.bindInputs();
+      themeManager.addChangeListener(this.handleThemeChange);
 
       // 设置拖拽功能
       this.container.filterManager.setupDragAndDrop(this.container.state, () => this.rerender());

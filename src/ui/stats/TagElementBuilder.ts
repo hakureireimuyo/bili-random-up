@@ -1,7 +1,7 @@
 import type { Tag } from "../../database/types/semantic.js";
 import { TagSource } from "../../database/types/base.js";
 import type { IElementBuilder } from "../../renderer/types.js";
-import { colorFromTag } from "../../utils/tag-utils.js";
+import { applyTagColor } from "../../utils/tag-utils.js";
 import { setDragContext, createDragGhost } from "../../utils/drag-utils.js";
 
 export class TagElementBuilder implements IElementBuilder<Tag, HTMLElement> {
@@ -10,7 +10,7 @@ export class TagElementBuilder implements IElementBuilder<Tag, HTMLElement> {
     const isSystemTag = tag.source === TagSource.SYSTEM;
     pill.className = `tag-pill ${isSystemTag ? "tag-pill-system" : "tag-pill-user"}`;
 
-    pill.style.backgroundColor = colorFromTag(tag.name);
+    applyTagColor(pill, tag.name);
     pill.textContent = tag.name;
     pill.draggable = true;
     pill.style.cursor = "grab";

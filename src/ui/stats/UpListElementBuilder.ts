@@ -8,7 +8,7 @@ import type { Creator } from "../../database/types/index.js";
 import type { IUpListElementBuilder } from "./up-list-types.js";
 import type { ServiceContainer } from "./services.js";
 import type { StatsState } from "./types.js";
-import { colorFromTag } from "../../utils/tag-utils.js";
+import { applyTagColor } from "../../utils/tag-utils.js";
 import { createDragGhost, setDragContext, getDragContext, type DragContext } from "../../utils/drag-utils.js";
 import { buildUserSpaceUrl, buildSearchUrl } from "../../utils/url-builder.js";
 
@@ -225,7 +225,7 @@ export class UpListElementBuilder implements IUpListElementBuilder {
     const tagElement = document.createElement("div");
     tagElement.className = "tag-pill";
     tagElement.textContent = tagName;
-    tagElement.style.backgroundColor = colorFromTag(tagName);
+    applyTagColor(tagElement, tagName);
     tagElement.draggable = true;
     tagElement.style.cursor = "pointer";
     // 点击时打开新标签页
@@ -277,7 +277,7 @@ export class UpListElementBuilder implements IUpListElementBuilder {
     const tagElement = document.createElement("div");
     tagElement.className = "tag-pill";
     tagElement.textContent = `${tagName}${tagWeight.count > 0 ? ` (${tagWeight.count})` : ''}`;
-    tagElement.style.backgroundColor = colorFromTag(tagName);
+    applyTagColor(tagElement, tagName);
     tagElement.style.opacity = "0.6";
     tagElement.draggable = true;
     tagElement.style.cursor = "pointer";
@@ -396,7 +396,7 @@ export class UpListElementBuilder implements IUpListElementBuilder {
     const newTagElement = document.createElement("div");
     newTagElement.className = "tag-pill";
     newTagElement.textContent = tagName;
-    newTagElement.style.backgroundColor = colorFromTag(tagName);
+    applyTagColor(newTagElement, tagName);
     newTagElement.draggable = true;
     newTagElement.style.cursor = "pointer";
     // 点击时打开新标签页

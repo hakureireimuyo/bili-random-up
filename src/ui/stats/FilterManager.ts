@@ -7,7 +7,7 @@ import type { StatsState } from "./types.js";
 import type { ServiceContainer } from "./services.js";
 import type { ID } from "../../database/types/base.js";
 import { getDragContext, setDragContext } from "../../utils/drag-utils.js";
-import { colorFromTag } from "../../utils/tag-utils.js";
+import { applyTagColor } from "../../utils/tag-utils.js";
 
 type RefreshFn = () => void;
 
@@ -189,8 +189,7 @@ export class FilterManager {
     tagElement.textContent = tagName;
 
     // 使用colorFromTag函数计算标签颜色
-    const tagColor = colorFromTag(tagName);
-    tagElement.style.backgroundColor = tagColor;
+    applyTagColor(tagElement, tagName);
 
     // 设置标签可拖拽
     tagElement.draggable = true;

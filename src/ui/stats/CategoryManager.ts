@@ -6,7 +6,7 @@
 import type { CategoryInfo, TagInfo } from "./types.js";
 import type { ServiceContainer } from "./services.js";
 import type { ID } from "../../database/types/base.js";
-import { colorFromTag } from "../../utils/tag-utils.js";
+import { applyTagColor } from "../../utils/tag-utils.js";
 import { createDragGhost, getDragContext, setDragContext, type DragContext } from "../../utils/drag-utils.js";
 
 type RenderFn = () => void | Promise<void>;
@@ -211,7 +211,7 @@ export class CategoryManager {
     const tagElement = document.createElement("span");
     tagElement.className = "tag-pill";
     tagElement.textContent = tag.name;
-    tagElement.style.backgroundColor = colorFromTag(tag.name);
+    applyTagColor(tagElement, tag.name);
     tagElement.draggable = true;
 
     tagElement.addEventListener('dragstart', (e) => {

@@ -35,6 +35,27 @@ export function colorFromTag(tag: string): string {
   return `hsl(${hue} ${saturation}% ${lightness}%)`;
 }
 
+export function applyTagColor(element: HTMLElement, tag: string): void {
+  const normalizedTag = normalizeTag(tag);
+  element.dataset.tagColor = normalizedTag;
+  element.style.backgroundColor = colorFromTag(normalizedTag);
+}
+
+export function refreshTagColors(root: ParentNode = document): void {
+  if (typeof document === "undefined") {
+    return;
+  }
+
+  const scope = root instanceof Element || root instanceof Document ? root : document;
+  const elements = scope.querySelectorAll<HTMLElement>("[data-tag-color]");
+  elements.forEach((element) => {
+    const tag = element.dataset.tagColor;
+    if (tag) {
+      element.style.backgroundColor = colorFromTag(tag);
+    }
+  });
+}
+
 export function normalizeTag(tag: string): string {
   return tag.trim();
 }
