@@ -52,6 +52,23 @@ export class Book<T> {
     const pageSize = options.pageSize || this.state.pageSize;
     const totalPages = Math.ceil(this.resultIds.length / pageSize);
 
+    // 空结果集时，允许渲染第 0 页并返回空列表，避免上层渲染逻辑报错
+    if (totalPages === 0) {
+      if (page !== 0) {
+        throw new Error(`Invalid page number: ${page}. Total pages: ${totalPages}`);
+      }
+
+      this.state.currentPage = 0;
+      this.state.totalPages = 0;
+      this.state.pageSize = pageSize;
+
+      return {
+        items: [],
+        state: { ...this.state },
+        bookId: this.bookId
+      };
+    }
+
     // 检查页码是否有效
     if (page < 0 || page >= totalPages) {
       throw new Error(`Invalid page number: ${page}. Total pages: ${totalPages}`);

@@ -196,8 +196,7 @@ export class UpListManager {
       this.services.paginationState.currentPage = Math.max(0, this.services.paginationState.totalPages - 1);
     }
 
-    // 更新UpListRender
-    await this.upListRender.update(state);
+    // Book.updateIndex 会通过监听器驱动列表刷新，这里只在首次创建之外维护分页状态即可
   }
 
   /**
