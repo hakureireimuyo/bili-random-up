@@ -141,7 +141,7 @@ function executeAnd(
 
 /**
  * 执行OR操作（纯函数）
- * 结果 = 当前结果 ∪ (指定标签列表中任一标签的ID集合)
+ * 结果 = 当前结果 ∩ (指定标签列表中任一标签的ID集合)
  */
 function executeOr(
   currentIds: Set<ID>,
@@ -159,10 +159,12 @@ function executeOr(
     }
   }
 
-  // 计算并集
-  const result = new Set(currentIds);
-  for (const id of unionIds) {
-    result.add(id);
+  // 只保留当前结果集中命中任一标签的项
+  const result = new Set<ID>();
+  for (const id of currentIds) {
+    if (unionIds.has(id)) {
+      result.add(id);
+    }
   }
   return result;
 }

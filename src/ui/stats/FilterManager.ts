@@ -53,6 +53,38 @@ export class FilterManager {
     state.filters.excludeTags = state.filters.excludeTags.filter(id => id !== tagId);
   }
 
+  addIncludeCategory(state: StatsState, categoryId: ID, tagIds: ID[]): void {
+    if (!state.filters.includeCategories.includes(categoryId)) {
+      state.filters.includeCategories.push(categoryId);
+    }
+
+    const exists = state.filters.includeCategoryTags.some(category => category.categoryId === categoryId);
+    if (!exists) {
+      state.filters.includeCategoryTags.push({ categoryId, tagIds: [...tagIds] });
+    }
+  }
+
+  removeIncludeCategory(state: StatsState, categoryId: ID): void {
+    state.filters.includeCategories = state.filters.includeCategories.filter(id => id !== categoryId);
+    state.filters.includeCategoryTags = state.filters.includeCategoryTags.filter(category => category.categoryId !== categoryId);
+  }
+
+  addExcludeCategory(state: StatsState, categoryId: ID, tagIds: ID[]): void {
+    if (!state.filters.excludeCategories.includes(categoryId)) {
+      state.filters.excludeCategories.push(categoryId);
+    }
+
+    const exists = state.filters.excludeCategoryTags.some(category => category.categoryId === categoryId);
+    if (!exists) {
+      state.filters.excludeCategoryTags.push({ categoryId, tagIds: [...tagIds] });
+    }
+  }
+
+  removeExcludeCategory(state: StatsState, categoryId: ID): void {
+    state.filters.excludeCategories = state.filters.excludeCategories.filter(id => id !== categoryId);
+    state.filters.excludeCategoryTags = state.filters.excludeCategoryTags.filter(category => category.categoryId !== categoryId);
+  }
+
   /**
    * 清除所有筛选
    */
@@ -93,6 +125,9 @@ export class FilterManager {
     // 获取标签名称
     const allTagIds = [...state.filters.includeTags, ...state.filters.excludeTags];
     const tagsMap = allTagIds.length > 0 ? await this.services.tagRepo.getTags(allTagIds) : new Map();
+    const allCategoryIds = [...state.filters.includeCategories, ...state.filters.excludeCategories];
+    const categories = await this.services.categoryRepo.getAllCategories();
+    const categoryMap = new Map(categories.map(category => [category.id, category]));
 
     // 渲染包含标签
     for (const tagId of state.filters.includeTags) {
@@ -108,6 +143,34 @@ export class FilterManager {
       const tagName = tag?.name || String(tagId);
       const tagElement = this.createFilterTagElement(tagId, tagName, 'exclude', state, refresh);
       excludeContainer.appendChild(tagElement);
+    }
+
+    for (const categoryId of state.filters.includeCategories) {
+      const category = categoryMap.get(categoryId);
+      const tagList = state.filters.includeCategoryTags.find(item => item.categoryId === categoryId)?.tagIds || [];
+      const categoryElement = this.createFilterCategoryElement(
+        categoryId,
+        category?.name || String(categoryId),
+        tagList,
+        'include',
+        state,
+        refresh
+      );
+      includeContainer.appendChild(categoryElement);
+    }
+
+    for (const categoryId of state.filters.excludeCategories) {
+      const category = categoryMap.get(categoryId);
+      const tagList = state.filters.excludeCategoryTags.find(item => item.categoryId === categoryId)?.tagIds || [];
+      const categoryElement = this.createFilterCategoryElement(
+        categoryId,
+        category?.name || String(categoryId),
+        tagList,
+        'exclude',
+        state,
+        refresh
+      );
+      excludeContainer.appendChild(categoryElement);
     }
   }
 
@@ -203,6 +266,78 @@ export class FilterManager {
     return tagElement;
   }
 
+  private createFilterCategoryElement(
+    categoryId: ID,
+    categoryName: string,
+    tagIds: ID[],
+    type: 'include' | 'exclude',
+    state: StatsState,
+    refresh: RefreshFn
+  ): HTMLElement {
+    const categoryElement = document.createElement("span");
+    categoryElement.className = `filter-tag filter-tag-category filter-tag-${type}`;
+    categoryElement.textContent = `${categoryName} (${tagIds.length} OR)`;
+    categoryElement.draggable = true;
+    categoryElement.style.cursor = "grab";
+
+    categoryElement.addEventListener("dragstart", (e) => {
+      setDragContext({
+        categoryId,
+        categoryName,
+        categoryTagIds: [...tagIds],
+        dropped: false,
+        isFilterTag: true,
+        isCategory: true
+      });
+
+      const ghost = e.target as HTMLElement;
+      ghost.style.opacity = "0.5";
+
+      if (e.dataTransfer) {
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", categoryName);
+      }
+    });
+
+    categoryElement.addEventListener("dragend", (e) => {
+      const context = getDragContext();
+      if (context && !context.dropped && context.isFilterTag && context.isCategory) {
+        categoryElement.remove();
+
+        if (type === 'include') {
+          this.removeIncludeCategory(state, categoryId);
+        } else {
+          this.removeExcludeCategory(state, categoryId);
+        }
+        refresh();
+      }
+
+      (e.target as HTMLElement).style.opacity = "1";
+    });
+
+    const removeBtn = document.createElement("button");
+    removeBtn.className = "filter-tag-remove";
+    removeBtn.textContent = "×";
+    removeBtn.addEventListener("mousedown", (e) => {
+      e.stopPropagation();
+    });
+    removeBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+
+      categoryElement.remove();
+      if (type === 'include') {
+        this.removeIncludeCategory(state, categoryId);
+      } else {
+        this.removeExcludeCategory(state, categoryId);
+      }
+      refresh();
+    });
+
+    categoryElement.appendChild(removeBtn);
+    return categoryElement;
+  }
+
   /**
    * 清除所有筛选
    */
@@ -269,7 +404,7 @@ export class FilterManager {
       zone.classList.remove('drag-over');
 
       const context = getDragContext();
-      if (!context || !context.tagId) {
+      if (!context) {
         return;
       }
 
@@ -281,11 +416,22 @@ export class FilterManager {
         return;
       }
 
-      // 更新过滤状态
-      if (type === 'include') {
-        this.addIncludeTag(state, context.tagId);
+      if (context.isCategory && context.categoryId && context.categoryTagIds) {
+        if (type === 'include') {
+          this.addIncludeCategory(state, context.categoryId, context.categoryTagIds);
+        } else {
+          this.addExcludeCategory(state, context.categoryId, context.categoryTagIds);
+        }
       } else {
-        this.addExcludeTag(state, context.tagId);
+        if (!context.tagId) {
+          return;
+        }
+
+        if (type === 'include') {
+          this.addIncludeTag(state, context.tagId);
+        } else {
+          this.addExcludeTag(state, context.tagId);
+        }
       }
 
       // 标记已放置

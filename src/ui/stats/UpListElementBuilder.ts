@@ -253,7 +253,7 @@ export class UpListElementBuilder implements IUpListElementBuilder {
     tagElement.addEventListener('dragend', async (e) => {
       setTimeout(async () => {
         const context = getDragContext();
-        if (context && !context.dropped && context.originUpMid === creatorId) {
+        if (context && context.tagId && !context.dropped && context.originUpMid === creatorId) {
           try {
             const tag = await this.services.tagRepo.getTag(context.tagId);
             if (tag && this.currentState) {
@@ -368,6 +368,10 @@ export class UpListElementBuilder implements IUpListElementBuilder {
    */
   private async addTagToCreator(context: DragContext, creatorElement: HTMLElement, creator: Creator): Promise<void> {
     try {
+      if (!context.tagId) {
+        return;
+      }
+
       const tag = await this.services.tagRepo.getTag(context.tagId);
       if (tag && this.currentState) {
         await this.services.creatorRepo.addTag(creator.creatorId, tag);
@@ -387,30 +391,32 @@ export class UpListElementBuilder implements IUpListElementBuilder {
    * 创建放置后的标签元素
    */
   private createDroppedTagElement(context: DragContext, creatorId: number): HTMLElement {
+    const tagName = context.tagName ?? "";
+    const tagId = context.tagId;
     const newTagElement = document.createElement("div");
     newTagElement.className = "tag-pill";
-    newTagElement.textContent = context.tagName;
-    newTagElement.style.backgroundColor = colorFromTag(context.tagName);
+    newTagElement.textContent = tagName;
+    newTagElement.style.backgroundColor = colorFromTag(tagName);
     newTagElement.draggable = true;
     newTagElement.style.cursor = "pointer";
     // 点击时打开新标签页
     newTagElement.addEventListener("click", (e) => {
       e.stopPropagation();
-      const url = buildSearchUrl(context.tagName);
+      const url = buildSearchUrl(tagName);
       window.open(url, "_blank", "noopener,noreferrer");
     });
 
     // 添加拖拽事件
     newTagElement.addEventListener('dragstart', (e) => {
       const newContext: DragContext = {
-        tagId: context.tagId,
-        tagName: context.tagName,
+        tagId,
+        tagName,
         originUpMid: creatorId,
         dropped: false,
         isFilterTag: false
       };
       setDragContext(newContext);
-      createDragGhost(e as DragEvent, context.tagName);
+      createDragGhost(e as DragEvent, tagName);
     });
 
     // 添加拖拽结束事件
@@ -418,7 +424,7 @@ export class UpListElementBuilder implements IUpListElementBuilder {
       setTimeout(async () => {
         const dragContext = getDragContext();
         // 只有当标签没有被放置到任何地方,且来源UP是当前UP时才删除
-        if (dragContext && !dragContext.dropped && dragContext.originUpMid === creatorId) {
+        if (dragContext && dragContext.tagId && !dragContext.dropped && dragContext.originUpMid === creatorId) {
           try {
             const tagToRemove = await this.services.tagRepo.getTag(dragContext.tagId);
             if (tagToRemove && this.currentState) {

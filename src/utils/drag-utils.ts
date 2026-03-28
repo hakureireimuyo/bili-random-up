@@ -5,13 +5,16 @@
 import { colorFromTag } from "./tag-utils.js";
 
 export interface DragContext {
-  tagId: number;
-  tagName: string;
+  tagId?: number;
+  tagName?: string;
   originUpMid?: number;
-  categoryId?: string;
+  categoryId?: number;
+  categoryName?: string;
+  categoryTagIds?: number[];
   dropped: boolean;
   isFilterTag?: boolean;
   isSystemTag?: boolean;
+  isCategory?: boolean;
 }
 
 let dragGhost: HTMLElement | null = null;

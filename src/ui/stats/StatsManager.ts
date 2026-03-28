@@ -251,11 +251,17 @@ export class StatsManager {
     // 绑定添加分类按钮
     const addCategoryBtn = document.getElementById('btn-add-category');
     addCategoryBtn?.addEventListener('click', async () => {
-      const categoryName = prompt('请输入分类名称:');
+      const categorySearchInput = document.getElementById('category-search') as HTMLInputElement | null;
+      const inputValue = categorySearchInput?.value.trim() || '';
+      const categoryName = inputValue || prompt('请输入分类名称:')?.trim() || '';
+
       if (categoryName) {
         try {
-          await this.container.categoryManager.createCategory(categoryName);
-          await this.container.categoryManager.renderCategories(() => this.rerender());
+          await this.container.categoryManager.ensureCategory(categoryName);
+          if (categorySearchInput) {
+            categorySearchInput.value = categoryName;
+          }
+          await this.container.categoryManager.renderCategories(() => this.rerender(), categoryName);
         } catch (error) {
           console.error('[StatsManager] 添加分类失败:', error);
           this.container.state.error = error instanceof Error ? error.message : '添加分类失败';
@@ -304,6 +310,12 @@ export class StatsManager {
       } else {
         this.container.tagManager.renderTagList(keyword);
       }
+    }, 300));
+
+    const categorySearchInput = document.getElementById('category-search');
+    categorySearchInput?.addEventListener('input', this.debounce((e) => {
+      const keyword = (e.target as HTMLInputElement).value.trim();
+      this.container.categoryManager.renderCategories(() => this.rerender(), keyword);
     }, 300));
   }
 

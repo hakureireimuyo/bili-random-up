@@ -116,21 +116,17 @@ export class UpListManager {
     const tagExpressions: any[] = [];
 
     // 处理包含标签（AND 操作）
-    if (state.filters.includeTags.length > 0) {
+    for (const tagId of state.filters.includeTags) {
       tagExpressions.push({
-        tagId: state.filters.includeTags.length === 1
-          ? state.filters.includeTags[0]
-          : state.filters.includeTags,
+        tagId,
         operator: 'AND'
       });
     }
 
     // 处理排除标签（NOT 操作）
-    if (state.filters.excludeTags.length > 0) {
+    for (const tagId of state.filters.excludeTags) {
       tagExpressions.push({
-        tagId: state.filters.excludeTags.length === 1
-          ? state.filters.excludeTags[0]
-          : state.filters.excludeTags,
+        tagId,
         operator: 'NOT'
       });
     }
@@ -142,17 +138,15 @@ export class UpListManager {
           tagId: category.tagIds.length === 1
             ? category.tagIds[0]
             : category.tagIds,
-          operator: 'AND'
+          operator: category.tagIds.length === 1 ? 'AND' : 'OR'
         });
       }
     });
 
     state.filters.excludeCategoryTags.forEach(category => {
-      if (category.tagIds.length > 0) {
+      for (const tagId of category.tagIds) {
         tagExpressions.push({
-          tagId: category.tagIds.length === 1
-            ? category.tagIds[0]
-            : category.tagIds,
+          tagId,
           operator: 'NOT'
         });
       }
