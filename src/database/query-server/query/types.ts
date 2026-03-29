@@ -4,6 +4,7 @@
  */
 
 import type { Platform, ID } from '../../types/base.js';
+import type { CollectionType } from '../../types/collection.js';
 import type { TagExpression } from '../cache/types.js';
 
 /**
@@ -48,7 +49,7 @@ export interface QueryStats {
 /**
  * 查询条件类型
  */
-export type QueryCondition = NameQueryCondition | TagQueryCondition | CompositeQueryCondition;
+export type QueryCondition = NameQueryCondition | TagQueryCondition | CompositeQueryCondition | FavoriteVideoQueryCondition;
 
 /**
  * 名称查询条件
@@ -154,6 +155,24 @@ export interface VideoQueryCondition {
   };
   /** 是否只查询已关注的创作者的视频（可选） */
   onlyFollowingCreators?: boolean;
+}
+
+/**
+ * 收藏视频查询条件
+ */
+export interface FavoriteVideoQueryCondition {
+  /** 平台 */
+  platform: Platform;
+  /** 收藏夹类型 */
+  collectionType?: CollectionType;
+  /** 收藏夹ID列表 */
+  collectionIds?: ID[];
+  /** 标题关键词 */
+  keyword?: string;
+  /** 创作者名称关键词 */
+  creatorKeyword?: string;
+  /** 标签表达式 */
+  tagExpressions?: TagExpression[];
 }
 
 // 重新导出 TagExpression 以便其他模块使用

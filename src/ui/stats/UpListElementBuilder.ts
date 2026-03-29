@@ -8,9 +8,9 @@ import type { Creator } from "../../database/types/index.js";
 import type { IUpListElementBuilder } from "./up-list-types.js";
 import type { ServiceContainer } from "./services.js";
 import type { StatsState } from "./types.js";
-import { applyTagColor } from "../../utils/tag-utils.js";
-import { createDragGhost, setDragContext, getDragContext, type DragContext } from "../../utils/drag-utils.js";
+import { setDragContext, getDragContext, type DragContext } from "../../utils/drag-utils.js";
 import { buildUserSpaceUrl, buildSearchUrl } from "../../utils/url-builder.js";
+import { createDraggableTagPill } from "../shared/index.js";
 
 /**
  * UP列表元素构建器实现
@@ -222,49 +222,41 @@ export class UpListElementBuilder implements IUpListElementBuilder {
    * 创建用户标签元素
    */
   private createUserTagElement(tagWeight: any, tagName: string, creatorId: number): HTMLElement {
-    const tagElement = document.createElement("div");
-    tagElement.className = "tag-pill";
-    tagElement.textContent = tagName;
-    applyTagColor(tagElement, tagName);
-    tagElement.draggable = true;
-    tagElement.style.cursor = "pointer";
-    // 点击时打开新标签页
-    tagElement.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const url = buildSearchUrl(tagName);
-      window.open(url, "_blank", "noopener,noreferrer");
-    });
-
-    // 设置拖拽开始事件
-    tagElement.addEventListener('dragstart', (e) => {
-      const context: DragContext = {
+    const tagElement = createDraggableTagPill({
+      text: tagName,
+      tagName,
+      elementTag: "div",
+      className: "tag-pill",
+      cursor: "pointer",
+      onClick: (e) => {
+        e.stopPropagation();
+        const url = buildSearchUrl(tagName);
+        window.open(url, "_blank", "noopener,noreferrer");
+      },
+      createDragContext: () => ({
         tagId: tagWeight.tagId,
         tagName,
         originUpMid: creatorId,
         dropped: false,
         isFilterTag: false,
         isSystemTag: false
-      };
-      setDragContext(context);
-      createDragGhost(e as DragEvent, tagName);
-    });
-
-    // 设置拖拽结束事件
-    tagElement.addEventListener('dragend', async (e) => {
-      setTimeout(async () => {
-        const context = getDragContext();
-        if (context && context.tagId && !context.dropped && context.originUpMid === creatorId) {
-          try {
-            const tag = await this.services.tagRepo.getTag(context.tagId);
-            if (tag && this.currentState) {
-              await this.services.creatorRepo.removeTag(creatorId, tag);
-              tagElement.remove();
+      }),
+      onDragEnd: async () => {
+        setTimeout(async () => {
+          const context = getDragContext();
+          if (context && context.tagId && !context.dropped && context.originUpMid === creatorId) {
+            try {
+              const tag = await this.services.tagRepo.getTag(context.tagId);
+              if (tag && this.currentState) {
+                await this.services.creatorRepo.removeTag(creatorId, tag);
+                tagElement.remove();
+              }
+            } catch (error) {
+              console.error('[UpListElementBuilder] 删除UP标签失败:', error);
             }
-          } catch (error) {
-            console.error('[UpListElementBuilder] 删除UP标签失败:', error);
           }
-        }
-      }, 0);
+        }, 0);
+      }
     });
 
     return tagElement;
@@ -274,33 +266,27 @@ export class UpListElementBuilder implements IUpListElementBuilder {
    * 创建系统标签元素
    */
   private createSystemTagElement(tagWeight: any, tagName: string, creatorId: number): HTMLElement {
-    const tagElement = document.createElement("div");
-    tagElement.className = "tag-pill";
-    tagElement.textContent = `${tagName}${tagWeight.count > 0 ? ` (${tagWeight.count})` : ''}`;
-    applyTagColor(tagElement, tagName);
-    tagElement.style.opacity = "0.6";
-    tagElement.draggable = true;
-    tagElement.style.cursor = "pointer";
-    // 点击时打开新标签页
-    tagElement.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const url = buildSearchUrl(tagName);
-      window.open(url, "_blank", "noopener,noreferrer");
-    });
-
-    tagElement.addEventListener('dragstart', (e) => {
-      const context: DragContext = {
+    const tagElement = createDraggableTagPill({
+      text: `${tagName}${tagWeight.count > 0 ? ` (${tagWeight.count})` : ''}`,
+      tagName,
+      elementTag: "div",
+      className: "tag-pill",
+      cursor: "pointer",
+      onClick: (e) => {
+        e.stopPropagation();
+        const url = buildSearchUrl(tagName);
+        window.open(url, "_blank", "noopener,noreferrer");
+      },
+      createDragContext: () => ({
         tagId: tagWeight.tagId,
         tagName,
         originUpMid: creatorId,
         dropped: false,
         isFilterTag: false,
         isSystemTag: true
-      };
-      setDragContext(context);
-      createDragGhost(e as DragEvent, tagName);
+      })
     });
-
+    tagElement.style.opacity = "0.6";
     return tagElement;
   }
 
@@ -393,49 +379,40 @@ export class UpListElementBuilder implements IUpListElementBuilder {
   private createDroppedTagElement(context: DragContext, creatorId: number): HTMLElement {
     const tagName = context.tagName ?? "";
     const tagId = context.tagId;
-    const newTagElement = document.createElement("div");
-    newTagElement.className = "tag-pill";
-    newTagElement.textContent = tagName;
-    applyTagColor(newTagElement, tagName);
-    newTagElement.draggable = true;
-    newTagElement.style.cursor = "pointer";
-    // 点击时打开新标签页
-    newTagElement.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const url = buildSearchUrl(tagName);
-      window.open(url, "_blank", "noopener,noreferrer");
-    });
-
-    // 添加拖拽事件
-    newTagElement.addEventListener('dragstart', (e) => {
-      const newContext: DragContext = {
+    const newTagElement = createDraggableTagPill({
+      text: tagName,
+      tagName,
+      elementTag: "div",
+      className: "tag-pill",
+      cursor: "pointer",
+      onClick: (e) => {
+        e.stopPropagation();
+        const url = buildSearchUrl(tagName);
+        window.open(url, "_blank", "noopener,noreferrer");
+      },
+      createDragContext: () => ({
         tagId,
         tagName,
         originUpMid: creatorId,
         dropped: false,
         isFilterTag: false
-      };
-      setDragContext(newContext);
-      createDragGhost(e as DragEvent, tagName);
-    });
-
-    // 添加拖拽结束事件
-    newTagElement.addEventListener('dragend', async (e) => {
-      setTimeout(async () => {
-        const dragContext = getDragContext();
-        // 只有当标签没有被放置到任何地方,且来源UP是当前UP时才删除
-        if (dragContext && dragContext.tagId && !dragContext.dropped && dragContext.originUpMid === creatorId) {
-          try {
-            const tagToRemove = await this.services.tagRepo.getTag(dragContext.tagId);
-            if (tagToRemove && this.currentState) {
-              await this.services.creatorRepo.removeTag(creatorId, tagToRemove);
-              newTagElement.remove();
+      }),
+      onDragEnd: async () => {
+        setTimeout(async () => {
+          const dragContext = getDragContext();
+          if (dragContext && dragContext.tagId && !dragContext.dropped && dragContext.originUpMid === creatorId) {
+            try {
+              const tagToRemove = await this.services.tagRepo.getTag(dragContext.tagId);
+              if (tagToRemove && this.currentState) {
+                await this.services.creatorRepo.removeTag(creatorId, tagToRemove);
+                newTagElement.remove();
+              }
+            } catch (error) {
+              console.error('[UpListElementBuilder] 删除UP标签失败:', error);
             }
-          } catch (error) {
-            console.error('[UpListElementBuilder] 删除UP标签失败:', error);
           }
-        }
-      }, 0);
+        }, 0);
+      }
     });
 
     return newTagElement;

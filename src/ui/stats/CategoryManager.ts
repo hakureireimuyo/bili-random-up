@@ -6,8 +6,8 @@
 import type { CategoryInfo, TagInfo } from "./types.js";
 import type { ServiceContainer } from "./services.js";
 import type { ID } from "../../database/types/base.js";
-import { applyTagColor } from "../../utils/tag-utils.js";
 import { createDragGhost, getDragContext, setDragContext, type DragContext } from "../../utils/drag-utils.js";
+import { bindDropZone, createDraggableTagPill } from "../shared/index.js";
 
 type RenderFn = () => void | Promise<void>;
 
@@ -208,30 +208,24 @@ export class CategoryManager {
   }
 
   private createCategoryTagElement(category: CategoryInfo, tag: TagInfo, onChanged: RenderFn): HTMLElement {
-    const tagElement = document.createElement("span");
-    tagElement.className = "tag-pill";
-    tagElement.textContent = tag.name;
-    applyTagColor(tagElement, tag.name);
-    tagElement.draggable = true;
-
-    tagElement.addEventListener('dragstart', (e) => {
-      const context: DragContext = {
+    const tagElement = createDraggableTagPill({
+      text: tag.name,
+      tagName: tag.name,
+      className: "tag-pill",
+      createDragContext: () => ({
         tagId: tag.tagId,
         tagName: tag.name,
         dropped: false
-      };
-      setDragContext(context);
-      createDragGhost(e as DragEvent, tag.name);
-    });
-
-    tagElement.addEventListener('dragend', () => {
-      setTimeout(async () => {
-        const context = getDragContext();
-        if (context && context.tagId === tag.tagId && !context.dropped) {
-          await this.removeTagsFromCategory(category.categoryId, [tag.tagId]);
-          await this.renderCategories(onChanged, this.currentKeyword);
-        }
-      }, 0);
+      }),
+      onDragEnd: () => {
+        setTimeout(async () => {
+          const context = getDragContext();
+          if (context && context.tagId === tag.tagId && !context.dropped) {
+            await this.removeTagsFromCategory(category.categoryId, [tag.tagId]);
+            await this.renderCategories(onChanged, this.currentKeyword);
+          }
+        }, 0);
+      }
     });
 
     return tagElement;
@@ -242,33 +236,20 @@ export class CategoryManager {
     category: CategoryInfo,
     onChanged: RenderFn
   ): void {
-    tagsContainer.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      tagsContainer.classList.add('drag-over');
-      if (e.dataTransfer) {
-        e.dataTransfer.dropEffect = 'copy';
+    bindDropZone({
+      zone: tagsContainer,
+      dropEffect: "copy",
+      accept: (context) => !context.isFilterTag && !context.isCategory && Boolean(context.tagId),
+      onDrop: async (context) => {
+        if (!context.tagId) {
+          return;
+        }
+
+        await this.addTagsToCategory(category.categoryId, [context.tagId]);
+        context.dropped = true;
+        setDragContext(context);
+        await this.renderCategories(onChanged, this.currentKeyword);
       }
-    });
-
-    tagsContainer.addEventListener('dragleave', (e) => {
-      if (!tagsContainer.contains(e.relatedTarget as Node)) {
-        tagsContainer.classList.remove('drag-over');
-      }
-    });
-
-    tagsContainer.addEventListener('drop', async (e) => {
-      e.preventDefault();
-      tagsContainer.classList.remove('drag-over');
-
-      const context = getDragContext();
-      if (!context || context.isFilterTag || context.isCategory || !context.tagId) {
-        return;
-      }
-
-      await this.addTagsToCategory(category.categoryId, [context.tagId]);
-      context.dropped = true;
-      setDragContext(context);
-      await this.renderCategories(onChanged, this.currentKeyword);
     });
   }
 

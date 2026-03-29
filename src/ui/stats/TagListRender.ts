@@ -2,6 +2,7 @@ import type { Tag } from "../../database/types/semantic.js";
 import type { RenderListConfig } from "../../renderer/types.js";
 import { RenderList } from "../../renderer/RenderList.js";
 import { RenderBook } from "../../renderer/RenderBook.js";
+import { renderPaginationControls } from "../shared/index.js";
 
 interface TagListRenderConfig {
   container: HTMLElement;
@@ -55,33 +56,17 @@ export class TagListRender extends RenderList<Tag, HTMLElement> {
       return;
     }
 
-    paginationContainer.innerHTML = "";
-
-    const currentPage = this.getCurrentPage();
-    const totalPages = this.getTotalPages();
-
-    const prevBtn = document.createElement("button");
-    prevBtn.className = "pagination-btn";
-    prevBtn.textContent = "上一页";
-    prevBtn.disabled = currentPage === 0;
-    prevBtn.addEventListener("click", async () => {
-      await this.previousPage();
-    });
-    paginationContainer.appendChild(prevBtn);
-
-    const pageInfo = document.createElement("span");
-    pageInfo.className = "pagination-info";
-    pageInfo.textContent = `${currentPage + 1} / ${totalPages || 1}`;
-    paginationContainer.appendChild(pageInfo);
-
-    const nextBtn = document.createElement("button");
-    nextBtn.className = "pagination-btn";
-    nextBtn.textContent = "下一页";
-    nextBtn.disabled = currentPage >= totalPages - 1;
-    nextBtn.addEventListener("click", async () => {
-      await this.nextPage();
-    });
-    paginationContainer.appendChild(nextBtn);
+    renderPaginationControls(
+      paginationContainer,
+      {
+        currentPage: this.getCurrentPage(),
+        totalPages: this.getTotalPages()
+      },
+      {
+        onPrev: async () => this.previousPage(),
+        onNext: async () => this.nextPage()
+      }
+    );
   }
 
   destroy(): void {

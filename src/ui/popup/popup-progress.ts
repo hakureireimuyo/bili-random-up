@@ -4,6 +4,10 @@ export function navigateToStats(): void {
   openExtensionPage("ui/stats/stats.html");
 }
 
+export function navigateToFavorites(): void {
+  openExtensionPage("ui/favorites/favorites.html");
+}
+
 export function navigateToTestTools(): void {
   openExtensionPage("ui/test-tools/test-tools.html");
 }

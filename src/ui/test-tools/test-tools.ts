@@ -9,6 +9,7 @@ import { CollectionRepositoryImpl } from '../../database/implementations/collect
 import { TagRepositoryImpl } from '../../database/implementations/tag-repository.impl.js';
 import { CollectionItemRepositoryImpl } from '../../database/implementations/collection-item-repository.impl.js';
 import { ImageRepositoryImpl } from '../../database/implementations/image-repository.impl.js';
+import { WatchEventRepositoryImpl } from '../../database/implementations/watch-event-repository.impl.js';
 import { Platform, TagSource } from '../../database/types/base.js';
 import { ImagePurpose } from '../../database/types/image.js';
 import { generateId } from '../../database/implementations/id-generator.js';
@@ -221,10 +222,12 @@ class TestDataGenerator {
   private tagRepository: TagRepositoryImpl;
   private collectionItemRepository: CollectionItemRepositoryImpl;
   private imageRepository: ImageRepositoryImpl;
+  private watchEventRepository: WatchEventRepositoryImpl;
 
   private existingCreators: any[] = [];
   private existingTags: any[] = [];
   private existingCollections: any[] = [];
+  private existingVideos: any[] = [];
 
   constructor() {
     this.videoRepository = new VideoRepositoryImpl();
@@ -233,6 +236,7 @@ class TestDataGenerator {
     this.tagRepository = new TagRepositoryImpl();
     this.collectionItemRepository = new CollectionItemRepositoryImpl();
     this.imageRepository = new ImageRepositoryImpl();
+    this.watchEventRepository = new WatchEventRepositoryImpl();
   }
 
   // 初始化现有数据
@@ -241,6 +245,91 @@ class TestDataGenerator {
     const tagsResult = await this.tagRepository.getAllTags();
     this.existingTags = tagsResult.items;
     this.existingCollections = await this.collectionRepository.getAllCollections();
+    this.existingVideos = await this.videoRepository.getAllVideos();
+  }
+
+  private async refreshCreators() {
+    this.existingCreators = await this.creatorRepository.getAll();
+  }
+
+  private async refreshTags() {
+    const tagsResult = await this.tagRepository.getAllTags();
+    this.existingTags = tagsResult.items;
+  }
+
+  private async refreshCollections() {
+    this.existingCollections = await this.collectionRepository.getAllCollections();
+  }
+
+  private async refreshVideos() {
+    this.existingVideos = await this.videoRepository.getAllVideos();
+  }
+
+  private async ensureTags(minCount: number): Promise<void> {
+    if (this.existingTags.length >= minCount) {
+      return;
+    }
+
+    await this.generateTags(minCount - this.existingTags.length);
+  }
+
+  private async ensureCreators(minCount: number): Promise<void> {
+    if (this.existingCreators.length >= minCount) {
+      return;
+    }
+
+    await this.ensureTags(Math.max(10, minCount));
+    await this.generateCreators(minCount - this.existingCreators.length);
+  }
+
+  private async ensureVideos(minCount: number): Promise<void> {
+    if (this.existingVideos.length >= minCount) {
+      return;
+    }
+
+    await this.ensureCreators(Math.max(5, Math.ceil(minCount / 3)));
+    await this.ensureTags(Math.max(10, Math.ceil(minCount / 2)));
+    await this.generateVideos(minCount - this.existingVideos.length);
+  }
+
+  private async ensureCollections(minCount: number): Promise<void> {
+    if (this.existingCollections.length >= minCount) {
+      return;
+    }
+
+    await this.generateCollections(minCount - this.existingCollections.length);
+  }
+
+  private buildCollectionItemPayload(videoId: number) {
+    return {
+      videoId,
+      note: RandomDataGenerator.randomBoolean()
+        ? RandomDataGenerator.randomChinese(RandomDataGenerator.randomInt(6, 20))
+        : undefined,
+      order: RandomDataGenerator.randomInt(1, 10000)
+    };
+  }
+
+  private buildWatchEvent(video: any) {
+    const watchTime = RandomDataGenerator.randomDate(new Date('2021-01-01'), new Date());
+    const maxDuration = Math.max(30, video.duration || 300);
+    const progress = Number(RandomDataGenerator.randomFloat(0.05, 1.4).toFixed(2));
+    const watchDuration = Math.max(
+      5,
+      Math.min(maxDuration * 2, Math.floor(maxDuration * progress))
+    );
+
+    return {
+      platform: video.platform,
+      videoId: video.videoId,
+      creatorId: video.creatorId,
+      watchTime,
+      watchDuration,
+      videoDuration: maxDuration,
+      progress,
+      isComplete: progress >= 0.9 ? 1 : 0,
+      endTime: watchTime + watchDuration * 1000
+    };
   }
 
   // 为现有创作者添加标签
@@ -289,7 +378,7 @@ class TestDataGenerator {
 
     // 刷新现有创作者列表
     console.log(`[TestDataGenerator] 为现有创作者添加标签完成`);
-    this.existingCreators = await this.creatorRepository.getAll();
+    await this.refreshCreators();
   }
 
   // 生成随机创作者
@@ -297,6 +386,8 @@ class TestDataGenerator {
     console.log(`[TestDataGenerator] 开始生成 ${count} 个创作者`);
     const startDate = new Date('2020-01-01');
     const endDate = new Date();
+    await this.initializeExistingData();
+    await this.ensureTags(Math.max(10, Math.ceil(count / 2)));
 
     for (let i = 0; i < count; i++) {
       const creatorId = generateId();
@@ -346,13 +437,14 @@ class TestDataGenerator {
     }
 
     // 刷新现有创作者列表
+    await this.refreshCreators();
     console.log(`[TestDataGenerator] 创作者生成完成，当前共有 ${this.existingCreators.length} 个创作者`);
-    this.existingCreators = await this.creatorRepository.getAll();
   }
 
   // 生成随机标签
   async generateTags(count: number, onProgress?: (current: number, total: number) => void): Promise<void> {
     console.log(`[TestDataGenerator] 开始生成 ${count} 个标签`);
+    await this.initializeExistingData();
     const tagNames = [
       '编程', '人工智能', '数据分析', '前端开发', '后端开发',
       '机器学习', '深度学习', '云计算', '网络安全', '移动开发',
@@ -394,8 +486,7 @@ class TestDataGenerator {
     }
 
     // 刷新现有标签列表
-    const tagsResult = await this.tagRepository.getAllTags();
-    this.existingTags = tagsResult.items;
+    await this.refreshTags();
     console.log(`[TestDataGenerator] 标签生成完成，当前共有 ${this.existingTags.length} 个标签`);
   }
 
@@ -404,6 +495,9 @@ class TestDataGenerator {
     console.log(`[TestDataGenerator] 开始生成 ${count} 个视频`);
     const startDate = new Date('2020-01-01');
     const endDate = new Date();
+    await this.initializeExistingData();
+    await this.ensureCreators(Math.max(5, Math.ceil(count / 3)));
+    await this.ensureTags(Math.max(10, Math.ceil(count / 2)));
 
     for (let i = 0; i < count; i++) {
       const creator = this.existingCreators.length > 0 
@@ -451,7 +545,8 @@ class TestDataGenerator {
         onProgress(i + 1, count);
       }
     }
-    console.log(`[TestDataGenerator] 视频生成完成`);
+    await this.refreshVideos();
+    console.log(`[TestDataGenerator] 视频生成完成，当前共有 ${this.existingVideos.length} 个视频`);
   }
 
   // 生成随机收藏夹
@@ -459,6 +554,7 @@ class TestDataGenerator {
     console.log(`[TestDataGenerator] 开始生成 ${count} 个收藏夹`);
     const startDate = new Date('2020-01-01');
     const endDate = new Date();
+    await this.initializeExistingData();
     const collectionNames = [
       '我的收藏', '学习资料', '技术分享', '娱乐视频', '音乐收藏',
       '游戏视频', '美食教程', '旅行记录', '健身教程', '编程学习'
@@ -510,8 +606,128 @@ class TestDataGenerator {
     }
 
     // 刷新现有收藏夹列表
+    await this.refreshCollections();
     console.log(`[TestDataGenerator] 收藏夹生成完成，当前共有 ${this.existingCollections.length} 个收藏夹`);
-    this.existingCollections = await this.collectionRepository.getAllCollections();
+  }
+
+  // 生成随机收藏项
+  async generateCollectionItems(count: number, onProgress?: (current: number, total: number) => void): Promise<void> {
+    console.log(`[TestDataGenerator] 开始生成 ${count} 个收藏项`);
+    await this.initializeExistingData();
+    await this.ensureVideos(Math.max(10, count));
+    await this.ensureCollections(Math.max(3, Math.ceil(count / 8)));
+
+    const collections = this.existingCollections.filter(collection => collection.platform === Platform.BILIBILI);
+    const videos = this.existingVideos.filter(video => video.platform === Platform.BILIBILI);
+
+    if (collections.length === 0 || videos.length === 0) {
+      throw new Error('缺少可用的 Bilibili 收藏夹或视频，无法生成收藏项');
+    }
+
+    let createdCount = 0;
+    let guard = 0;
+    const maxAttempts = count * 20;
+
+    while (createdCount < count && guard < maxAttempts) {
+      guard++;
+      const collection = RandomDataGenerator.randomChoice(collections);
+      const video = RandomDataGenerator.randomChoice(videos);
+
+      try {
+        await this.collectionRepository.addItemToCollection(
+          collection.collectionId,
+          this.buildCollectionItemPayload(video.videoId)
+        );
+        createdCount++;
+
+        if (createdCount % 10 === 0 || createdCount === count) {
+          console.log(`[TestDataGenerator] 已生成 ${createdCount}/${count} 个收藏项`);
+        }
+
+        if (onProgress) {
+          onProgress(createdCount, count);
+        }
+      } catch (error) {
+        if (!(error instanceof Error) || !error.message.includes('Video already exists in collection')) {
+          throw error;
+        }
+      }
+    }
+
+    if (createdCount < count) {
+      console.warn(`[TestDataGenerator] 目标 ${count} 个收藏项未全部生成，实际生成 ${createdCount} 个`);
+    }
+
+    await this.refreshCollections();
+  }
+
+  // 生成随机观看事件
+  async generateWatchEvents(count: number, onProgress?: (current: number, total: number) => void): Promise<void> {
+    console.log(`[TestDataGenerator] 开始生成 ${count} 个观看事件`);
+    await this.initializeExistingData();
+    await this.ensureVideos(Math.max(10, Math.ceil(count / 2)));
+
+    const videos = this.existingVideos.filter(video => video.platform === Platform.BILIBILI);
+    if (videos.length === 0) {
+      throw new Error('缺少可用的 Bilibili 视频，无法生成观看事件');
+    }
+
+    const batchSize = 20;
+    const batch: Array<ReturnType<TestDataGenerator['buildWatchEvent']>> = [];
+
+    for (let i = 0; i < count; i++) {
+      const video = RandomDataGenerator.randomChoice(videos);
+      batch.push(this.buildWatchEvent(video));
+
+      if (batch.length >= batchSize || i === count - 1) {
+        await this.watchEventRepository.recordWatchEvents(batch.splice(0, batch.length));
+      }
+
+      if (i % 10 === 0 || i === count - 1) {
+        console.log(`[TestDataGenerator] 已生成 ${i + 1}/${count} 个观看事件`);
+      }
+
+      if (onProgress) {
+        onProgress(i + 1, count);
+      }
+    }
+  }
+
+  // 生成完整关联收藏数据
+  async generateLinkedFavoritesDataset(
+    count: number,
+    onProgress?: (type: string, current: number, total: number) => void
+  ): Promise<void> {
+    console.log('[TestDataGenerator] 开始生成关联收藏数据');
+    await this.initializeExistingData();
+
+    const tagCount = Math.max(12, Math.ceil(count / 2));
+    const creatorCount = Math.max(8, Math.ceil(count / 3));
+    const videoCount = Math.max(count, creatorCount * 2);
+    const collectionCount = Math.max(4, Math.ceil(count / 10));
+    const collectionItemCount = Math.max(count, collectionCount * 6);
+    const watchEventCount = Math.max(count * 2, 20);
+
+    await this.generateTags(tagCount, (current, total) => {
+      onProgress?.('标签', current, total);
+    });
+    await this.generateCreators(creatorCount, (current, total) => {
+      onProgress?.('创作者', current, total);
+    });
+    await this.generateVideos(videoCount, (current, total) => {
+      onProgress?.('视频', current, total);
+    });
+    await this.generateCollections(collectionCount, (current, total) => {
+      onProgress?.('收藏夹', current, total);
+    });
+    await this.generateCollectionItems(collectionItemCount, (current, total) => {
+      onProgress?.('收藏项', current, total);
+    });
+    await this.generateWatchEvents(watchEventCount, (current, total) => {
+      onProgress?.('观看事件', current, total);
+    });
+
+    console.log('[TestDataGenerator] 关联收藏数据生成完成');
   }
 
   // 生成全部测试数据
@@ -519,14 +735,14 @@ class TestDataGenerator {
     console.log('[TestDataGenerator] 开始生成全部测试数据');
     await this.initializeExistingData();
 
-    // 生成创作者
-    await this.generateCreators(count, (current, total) => {
-      if (onProgress) onProgress('创作者', current, total);
-    });
-
     // 生成标签
     await this.generateTags(count, (current, total) => {
       if (onProgress) onProgress('标签', current, total);
+    });
+
+    // 生成创作者
+    await this.generateCreators(count, (current, total) => {
+      if (onProgress) onProgress('创作者', current, total);
     });
 
     // 生成视频
@@ -537,6 +753,16 @@ class TestDataGenerator {
     // 生成收藏夹
     await this.generateCollections(count, (current, total) => {
       if (onProgress) onProgress('收藏夹', current, total);
+    });
+
+    // 生成收藏项
+    await this.generateCollectionItems(count, (current, total) => {
+      if (onProgress) onProgress('收藏项', current, total);
+    });
+
+    // 生成观看事件
+    await this.generateWatchEvents(count * 2, (current, total) => {
+      if (onProgress) onProgress('观看事件', current, total);
     });
     
     console.log('[TestDataGenerator] 全部测试数据生成完成');
@@ -601,8 +827,23 @@ document.addEventListener('DOMContentLoaded', async () => {
           await testDataGenerator.generateCollections(count, updateProgress);
           testDataStatus.textContent = '生成完成';
           break;
+        case 'collection-items':
+          await testDataGenerator.generateCollectionItems(count, updateProgress);
+          testDataStatus.textContent = '生成完成';
+          break;
+        case 'watch-events':
+          await testDataGenerator.generateWatchEvents(count, updateProgress);
+          testDataStatus.textContent = '生成完成';
+          break;
         case 'tags':
           await testDataGenerator.generateTags(count, updateProgress);
+          testDataStatus.textContent = '生成完成';
+          break;
+        case 'linked-favorites':
+          await testDataGenerator.generateLinkedFavoritesDataset(count, (type, current, total) => {
+            testDataStatus.textContent = `正在生成${type}...`;
+            updateProgress(current, total);
+          });
           testDataStatus.textContent = '生成完成';
           break;
         case 'add-tags-to-creators':

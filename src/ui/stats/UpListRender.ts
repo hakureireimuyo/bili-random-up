@@ -20,6 +20,7 @@ import { RenderList } from "../../renderer/RenderList.js";
 import { RenderBook } from "../../renderer/RenderBook.js";
 import { UpListElementBuilder } from "./UpListElementBuilder.js";
 import { updateToggleLabel } from "../../utils/dom-utils.js";
+import { bindPaginationElements } from "../shared/index.js";
 
 /**
  * UP列表渲染类
@@ -192,17 +193,31 @@ export class UpListRender extends RenderList<Creator, HTMLElement> {
     const currentPage = this.services.paginationState.currentPage;
     const totalPages = this.services.paginationState.totalPages;
 
-    // 更新上一页按钮状态
-    prevBtn.disabled = currentPage === 0;
-
-    // 更新页码信息
-    pageInfo.textContent = `${currentPage + 1} / ${totalPages || 1}`;
-
-    // 更新下一页按钮状态
-    nextBtn.disabled = currentPage >= totalPages - 1;
-
-    // 移除旧的事件监听器并添加新的
-    this.updatePaginationEventHandlers(prevBtn, nextBtn, currentPage, totalPages);
+    bindPaginationElements({
+      prevButton: prevBtn,
+      nextButton: nextBtn,
+      infoElement: pageInfo,
+      state: {
+        currentPage,
+        totalPages
+      },
+      actions: {
+        onPrev: async () => {
+          this.services.paginationState.currentPage = currentPage - 1;
+          this.scrollToTop();
+          if (this.currentState) {
+            await this.update(this.currentState);
+          }
+        },
+        onNext: async () => {
+          this.services.paginationState.currentPage = currentPage + 1;
+          this.scrollToTop();
+          if (this.currentState) {
+            await this.update(this.currentState);
+          }
+        }
+      }
+    });
   }
 
   /**
@@ -212,46 +227,6 @@ export class UpListRender extends RenderList<Creator, HTMLElement> {
     this.container.scrollIntoView({ behavior: 'smooth', block: 'start' });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
-
-
-  /**
-   * 更新分页按钮的事件处理器
-   */
-  private updatePaginationEventHandlers(
-    prevBtn: HTMLButtonElement,
-    nextBtn: HTMLButtonElement,
-    currentPage: number,
-    totalPages: number
-  ): void {
-    // 移除旧的事件监听器（通过克隆节点）
-    const newPrevBtn = prevBtn.cloneNode(true) as HTMLButtonElement;
-    const newNextBtn = nextBtn.cloneNode(true) as HTMLButtonElement;
-    prevBtn.parentNode?.replaceChild(newPrevBtn, prevBtn);
-    nextBtn.parentNode?.replaceChild(newNextBtn, nextBtn);
-
-    // 添加新的事件监听器
-    newPrevBtn.addEventListener("click", async () => {
-      if (currentPage > 0) {
-        this.services.paginationState.currentPage = currentPage - 1;
-        this.scrollToTop();
-        if (this.currentState) {
-          await this.update(this.currentState);
-        }
-      }
-    });
-
-    newNextBtn.addEventListener("click", async () => {
-      if (currentPage < totalPages - 1) {
-        this.services.paginationState.currentPage = currentPage + 1;
-        this.scrollToTop();
-        if (this.currentState) {
-          await this.update(this.currentState);
-        }
-      }
-    });
-  }
-
-
 
   /**
    * 销毁UP列表

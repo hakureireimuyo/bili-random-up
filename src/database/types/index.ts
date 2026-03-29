@@ -52,5 +52,10 @@ export type {
 // Collection 类型
 export type {
   Collection,
-  CollectionItem
+  CollectionItem,
+  CollectionType
 } from './collection.js';
+
+export type {
+  FavoriteVideoEntry
+} from './favorite-video.js';

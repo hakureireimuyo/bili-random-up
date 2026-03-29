@@ -56,6 +56,22 @@ export function refreshTagColors(root: ParentNode = document): void {
   });
 }
 
+export function bindThemeTagColorRefresh(
+  getRoot: () => ParentNode | null = () => document
+): () => void {
+  const handleThemeChange = () => {
+    const root = getRoot();
+    if (root) {
+      refreshTagColors(root);
+    }
+  };
+
+  themeManager.addChangeListener(handleThemeChange);
+  return () => {
+    themeManager.removeChangeListener(handleThemeChange);
+  };
+}
+
 export function normalizeTag(tag: string): string {
   return tag.trim();
 }

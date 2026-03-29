@@ -11,8 +11,8 @@ import { TagManager } from "./TagManager.js";
 import { CategoryManager } from "./CategoryManager.js";
 import { FilterManager } from "./FilterManager.js";
 import type { StatsState } from "./types.js";
-import { themeManager } from "../../themes/theme-manager.js";
-import { refreshTagColors } from "../../utils/tag-utils.js";
+import { bindThemeTagColorRefresh } from "../../utils/tag-utils.js";
+import { bindDebouncedTextInput, setMetricValues } from "../shared/index.js";
 
 /**
  * 实例容器接口
@@ -108,9 +108,7 @@ class InstanceContainerImpl implements InstanceContainer {
 export class StatsManager {
   private container: InstanceContainerImpl;
   private initialized: boolean = false;
-  private readonly handleThemeChange = () => {
-    refreshTagColors();
-  };
+  private readonly cleanupFns: Array<() => void> = [];
 
   constructor(container?: InstanceContainerImpl) {
     this.container = container || InstanceContainerImpl.getInstance();
@@ -136,7 +134,7 @@ export class StatsManager {
       // 绑定事件
       this.bindPageActions();
       this.bindInputs();
-      themeManager.addChangeListener(this.handleThemeChange);
+      this.cleanupFns.push(bindThemeTagColorRefresh());
 
       // 设置拖拽功能
       this.container.filterManager.setupDragAndDrop(this.container.state, () => this.rerender());
@@ -164,19 +162,11 @@ export class StatsManager {
     const tagCount = tagResult.total;
 
     // 更新UI
-    const followedCountElement = document.getElementById("stat-followed-count");
-    const unfollowedCountElement = document.getElementById("stat-unfollowed-count");
-    const tagCountElement = document.getElementById("stat-tag-count");
-
-    if (followedCountElement) {
-      followedCountElement.textContent = followedCount.toString();
-    }
-    if (unfollowedCountElement) {
-      unfollowedCountElement.textContent = unfollowedCount.toString();
-    }
-    if (tagCountElement) {
-      tagCountElement.textContent = tagCount.toString();
-    }
+    setMetricValues({
+      "stat-followed-count": followedCount,
+      "stat-unfollowed-count": unfollowedCount,
+      "stat-tag-count": tagCount
+    });
   }
 
   /**
@@ -286,18 +276,10 @@ export class StatsManager {
    * 绑定输入事件
    */
   private bindInputs(): void {
-    // 绑定搜索框
-    const searchInput = document.getElementById('up-search');
-    searchInput?.addEventListener('input', this.debounce((e) => {
-      const keyword = (e.target as HTMLInputElement).value.trim();
-      // 如果搜索框为空，清除搜索关键词状态
-      if (keyword === '') {
-        this.container.state.searchKeyword = '';
-      } else {
-        this.container.state.searchKeyword = keyword;
-      }
-      this.container.upListManager.renderUpList(this.container.state);
-    }, 300));
+    this.cleanupFns.push(bindDebouncedTextInput("up-search", (keyword) => {
+      this.container.state.searchKeyword = keyword;
+      void this.container.upListManager.renderUpList(this.container.state);
+    }));
 
     // 绑定关注筛选开关
     const followToggle = document.getElementById('show-followed-toggle');
@@ -306,37 +288,13 @@ export class StatsManager {
       this.container.upListManager.renderUpList(this.container.state);
     });
 
-    // 绑定标签搜索框
-    const tagSearchInput = document.getElementById('tag-search');
-    tagSearchInput?.addEventListener('input', this.debounce((e) => {
-      const keyword = (e.target as HTMLInputElement).value.trim();
-      // 如果搜索框为空，显示所有标签
-      if (keyword === '') {
-        this.container.tagManager.renderTagList('');
-      } else {
-        this.container.tagManager.renderTagList(keyword);
-      }
-    }, 300));
+    this.cleanupFns.push(bindDebouncedTextInput("tag-search", (keyword) => {
+      void this.container.tagManager.renderTagList(keyword);
+    }));
 
-    const categorySearchInput = document.getElementById('category-search');
-    categorySearchInput?.addEventListener('input', this.debounce((e) => {
-      const keyword = (e.target as HTMLInputElement).value.trim();
-      this.container.categoryManager.renderCategories(() => this.rerender(), keyword);
-    }, 300));
-  }
-
-  /**
-   * 防抖函数
-   */
-  private debounce<T extends (...args: any[]) => any>(
-    func: T,
-    wait: number
-  ): (...args: Parameters<T>) => void {
-    let timeout: number | null = null;
-    return (...args: Parameters<T>) => {
-      if (timeout) clearTimeout(timeout);
-      timeout = setTimeout(() => func(...args), wait);
-    };
+    this.cleanupFns.push(bindDebouncedTextInput("category-search", (keyword) => {
+      void this.container.categoryManager.renderCategories(() => this.rerender(), keyword);
+    }));
   }
 
   /**
@@ -351,6 +309,11 @@ export class StatsManager {
    */
   getContainer(): InstanceContainer {
     return this.container;
+  }
+
+  dispose(): void {
+    this.cleanupFns.forEach(cleanup => cleanup());
+    this.cleanupFns.length = 0;
   }
 }
 
@@ -373,6 +336,9 @@ export function getStatsManager(): StatsManager {
  * 重置全局统计管理器
  */
 export function resetStatsManager(): void {
+  if (globalStatsManager) {
+    globalStatsManager.dispose();
+  }
   globalStatsManager = null;
   InstanceContainerImpl.reset();
 }

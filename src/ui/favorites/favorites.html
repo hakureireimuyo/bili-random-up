@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>收藏视频</title>
+    <link rel="stylesheet" href="./favorites.css" />
+  </head>
+  <body>
+    <div class="favorites-page">
+      <div class="content-area">
+        <section class="video-list-container">
+          <div class="search-bar">
+            <input type="text" id="searchInput" class="search-input search-input-compact" placeholder="搜索视频标题，或用 @UP 主名" />
+          </div>
+
+          <div class="video-status-layer">
+            <div class="loading" id="loading">
+              <div class="spinner"></div>
+              <p>加载中...</p>
+            </div>
+            <div class="empty" id="empty" style="display: none;">
+              <p>没有匹配的视频</p>
+            </div>
+            <div class="error" id="error" style="display: none;">
+              <p id="errorMessage"></p>
+            </div>
+          </div>
+
+          <div class="video-list" id="videoList"></div>
+
+          <div class="pagination" id="pagination" style="display: none;">
+            <button id="prevPage" class="btn btn-secondary" type="button">上一页</button>
+            <span id="pageInfo">1 / 1</span>
+            <button id="nextPage" class="btn btn-secondary" type="button">下一页</button>
+          </div>
+        </section>
+
+        <aside class="control-panel">
+          <div class="collection-tabs-panel">
+            <div class="collection-type-switch">
+              <button id="type-user" class="type-switch-btn active" type="button">我的收藏夹</button>
+              <button id="type-subscription" class="type-switch-btn" type="button">订阅合集</button>
+            </div>
+            <div class="collection-tabs" id="collectionTabs"></div>
+          </div>
+
+          <div class="filter-section">
+            <h3>标签筛选</h3>
+            <div class="filter-zones">
+              <div class="filter-zone">
+                <h4>必须包含</h4>
+                <div id="filter-include-tags" class="filter-tags"></div>
+              </div>
+              <div class="filter-zone">
+                <h4>不能包含</h4>
+                <div id="filter-exclude-tags" class="filter-tags"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="tag-section">
+            <h3>标签列表</h3>
+            <input type="text" id="tagSearchInput" class="search-input" placeholder="搜索标签..." />
+            <div id="tag-list" class="list tag-list-scrollable"></div>
+          </div>
+        </aside>
+      </div>
+    </div>
+    <script type="module" src="./favorites.ts"></script>
+  </body>
+</html>

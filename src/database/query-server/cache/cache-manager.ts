@@ -9,9 +9,11 @@ import { TagCache } from './tag-cache.js';
 import type { CreatorIndex } from './types.js';
 import type { VideoIndex } from './types.js';
 import type { TagIndex } from './types.js';
+import type { FavoriteVideoIndex } from './types.js';
 import type { Creator } from '../../types/creator.js';
 import type { Video } from '../../types/video.js';
 import type { Tag } from '../../types/semantic.js';
+import type { FavoriteVideoEntry } from '../../types/favorite-video.js';
 
 /**
  * 全局缓存管理器类
@@ -41,6 +43,12 @@ export class CacheManager {
   // 标签索引缓存
   private tagIndexCache: IndexCache<TagIndex>;
 
+  // 收藏视频索引缓存
+  private favoriteVideoIndexCache: IndexCache<FavoriteVideoIndex>;
+
+  // 收藏视频数据缓存
+  private favoriteVideoDataCache: DataCache<FavoriteVideoEntry>;
+
   private constructor() {
     // 初始化所有缓存单例
     this.indexCache = new IndexCache<CreatorIndex>();
@@ -62,6 +70,12 @@ export class CacheManager {
     this.tagCache = new TagCache();
     this.videoIndexCache = new IndexCache<VideoIndex>();
     this.tagIndexCache = new IndexCache<TagIndex>();
+    this.favoriteVideoIndexCache = new IndexCache<FavoriteVideoIndex>();
+    this.favoriteVideoDataCache = new DataCache<FavoriteVideoEntry>({
+      maxSize: 1000,
+      maxAge: 3600000,
+      cleanupRatio: 0.2
+    });
   }
 
   /**
@@ -123,6 +137,14 @@ export class CacheManager {
     return this.tagIndexCache;
   }
 
+  getFavoriteVideoIndexCache(): IndexCache<FavoriteVideoIndex> {
+    return this.favoriteVideoIndexCache;
+  }
+
+  getFavoriteVideoDataCache(): DataCache<FavoriteVideoEntry> {
+    return this.favoriteVideoDataCache;
+  }
+
   /**
    * 清空所有缓存
    */
@@ -134,6 +156,8 @@ export class CacheManager {
     this.tagCache.clear();
     this.videoIndexCache.clear();
     this.tagIndexCache.clear();
+    this.favoriteVideoIndexCache.clear();
+    this.favoriteVideoDataCache.clear();
   }
 
   /**
@@ -147,6 +171,8 @@ export class CacheManager {
     tagCache: ReturnType<TagCache['getStats']>;
     videoIndexCache: { size: number };
     tagIndexCache: { size: number };
+    favoriteVideoIndexCache: { size: number };
+    favoriteVideoDataCache: ReturnType<DataCache<FavoriteVideoEntry>['getStats']>;
   } {
     return {
       indexCache: {
@@ -161,7 +187,11 @@ export class CacheManager {
       },
       tagIndexCache: {
         size: this.tagIndexCache.size()
-      }
+      },
+      favoriteVideoIndexCache: {
+        size: this.favoriteVideoIndexCache.size()
+      },
+      favoriteVideoDataCache: this.favoriteVideoDataCache.getStats()
     };
   }
 }

@@ -4,6 +4,7 @@
  */
 
 import type { Platform, ID } from '../../types/base.js';
+import type { CollectionType } from '../../types/collection.js';
 
 /**
  * 时长范围查询条件
@@ -75,6 +76,31 @@ export interface VideoIndex {
   tags: ID[];
   /** 是否失效 */
   isInvalid?: boolean;
+}
+
+/**
+ * 收藏视频索引
+ * 用于收藏页的内存索引查询
+ */
+export interface FavoriteVideoIndex {
+  /** 索引ID */
+  favoriteEntryId: ID;
+  /** 视频ID */
+  videoId: ID;
+  /** 平台 */
+  platform: Platform;
+  /** 视频标题 */
+  title: string;
+  /** 创作者ID */
+  creatorId: ID;
+  /** 收藏夹ID列表 */
+  collectionIds: ID[];
+  /** 收藏夹类型列表 */
+  collectionTypes: CollectionType[];
+  /** 标签ID列表 */
+  tags: ID[];
+  /** 最近收藏时间 */
+  addedAt: number;
 }
 
 /**

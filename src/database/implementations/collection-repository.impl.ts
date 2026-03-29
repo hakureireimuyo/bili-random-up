@@ -434,6 +434,28 @@ export class CollectionRepositoryImpl {
   }
 
   /**
+   * 批量获取多个收藏夹中的收藏项
+   * @param collectionIds 收藏夹ID列表
+   * @returns 以收藏夹ID为键的收藏项映射
+   */
+  async getCollectionItemsByCollectionIds(collectionIds: ID[]): Promise<Map<ID, CollectionItem[]>> {
+    const result = new Map<ID, CollectionItem[]>();
+
+    await Promise.all(
+      collectionIds.map(async (collectionId) => {
+        const items = await DBUtils.getByIndex<CollectionItem>(
+          STORE_NAMES.COLLECTION_ITEMS,
+          'collectionId',
+          collectionId
+        );
+        result.set(collectionId, items);
+      })
+    );
+
+    return result;
+  }
+
+  /**
    * 获取收藏夹中的收藏项（分页）
    * 基于collectionId索引查询
    * @param collectionId 收藏夹ID

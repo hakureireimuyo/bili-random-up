@@ -22,6 +22,7 @@ export {
 export { CreatorRepository } from './repositories/creator-repository.js';
 export { VideoRepository } from './repositories/video-repository.js';
 export { TagRepository } from './repositories/tag-repository.js';
+export { FavoriteVideoRepository } from './repositories/favorite-video-repository.js';
 
 // ============ Implementations 层 ============
 export { TagRepositoryImpl } from './implementations/tag-repository.impl.js';
@@ -47,6 +48,7 @@ export { QueryService } from './query-server/query/query-service.js';
 export { CompositeQueryService } from './query-server/query/composite-query-service.js';
 export { filterByName, filterByFollowing, filterByTags, filterCombined } from './query-server/query/query-engine.js';
 export { VideoQueryService } from './query-server/query/video-query-service.js';
+export { FavoriteVideoQueryService } from './query-server/query/favorite-video-query-service.js';
 export { TagFilterEngine } from './query-server/query/tag-filter-engine.js';
 
 // 书管理层
@@ -77,3 +79,4 @@ export * from './types/creator.js';
 export * from './types/image.js';
 export * from './types/semantic.js';
 export * from './types/video.js';
+export * from './types/favorite-video.js';

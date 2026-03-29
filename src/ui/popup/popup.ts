@@ -1,4 +1,4 @@
-import { navigateToStats, navigateToTestTools, navigateToOptions, navigateToThemeSettings } from "./popup-progress.js";
+import { navigateToFavorites, navigateToStats, navigateToTestTools, navigateToOptions, navigateToThemeSettings } from "./popup-progress.js";
 import { openExtensionPage } from "./popup-runtime.js";
 import { initThemedPage } from "../../themes/index.js";
 
@@ -51,7 +51,7 @@ function bindButtons(): void {
       console.log("[popup] btn-favorites clicked");
       event.preventDefault();
       event.stopPropagation();
-      navigateToTestTools();
+      navigateToFavorites();
     });
   }
 

@@ -7,7 +7,7 @@ import type { StatsState } from "./types.js";
 import type { ServiceContainer } from "./services.js";
 import type { ID } from "../../database/types/base.js";
 import { getDragContext, setDragContext } from "../../utils/drag-utils.js";
-import { applyTagColor } from "../../utils/tag-utils.js";
+import { bindDropZone, createFilterChip } from "../shared/index.js";
 
 type RefreshFn = () => void;
 
@@ -184,47 +184,34 @@ export class FilterManager {
     state: StatsState,
     refresh: RefreshFn
   ): HTMLElement {
-    const tagElement = document.createElement("span");
-    tagElement.className = `filter-tag filter-tag-${type}`;
-    tagElement.textContent = tagName;
-
-    // 使用colorFromTag函数计算标签颜色
-    applyTagColor(tagElement, tagName);
-
-    // 设置标签可拖拽
-    tagElement.draggable = true;
-    tagElement.style.cursor = 'grab';
-
-    // 拖拽开始事件
-    tagElement.addEventListener('dragstart', (e) => {
-      // 设置拖拽数据
-      const context = {
+    const tagElement = createFilterChip({
+      label: tagName,
+      colorTag: tagName,
+      variant: type,
+      createDragContext: () => ({
         tagId: tagId,
         tagName: tagName,
         dropped: false,
-        isFilterTag: true  // 标记这是过滤区标签
-      };
-      setDragContext(context);
-
-      // 创建拖拽时的幽灵元素
-      const ghost = e.target as HTMLElement;
-      ghost.style.opacity = '0.5';
-
-      // 设置拖拽效果
-      if (e.dataTransfer) {
-        e.dataTransfer.effectAllowed = 'move';
-        e.dataTransfer.setData('text/plain', tagName);
-      }
-    });
-
-    // 拖拽结束事件
-    tagElement.addEventListener('dragend', (e) => {
-      const context = getDragContext();
-      if (context && !context.dropped && context.isFilterTag) {
-        // 立即移除DOM元素
-        tagElement.remove();
-
-        // 如果拖拽没有被放置到任何区域，则删除标签
+        isFilterTag: true
+      }),
+      onDragStart: (_, element) => {
+        element.style.opacity = "0.5";
+      },
+      onDragEnd: (_, element) => {
+        const context = getDragContext();
+        if (context && !context.dropped && context.isFilterTag) {
+          element.remove();
+          if (type === 'include') {
+            this.removeIncludeTag(state, tagId);
+          } else {
+            this.removeExcludeTag(state, tagId);
+          }
+          refresh();
+        }
+        element.style.opacity = "1";
+      },
+      onRemove: (_, element) => {
+        element.remove();
         if (type === 'include') {
           this.removeIncludeTag(state, tagId);
         } else {
@@ -232,36 +219,7 @@ export class FilterManager {
         }
         refresh();
       }
-      // 重置透明度
-      (e.target as HTMLElement).style.opacity = '1';
     });
-
-    const removeBtn = document.createElement("button");
-    removeBtn.className = "filter-tag-remove";
-    removeBtn.textContent = "×";
-
-    // 阻止事件冒泡，防止触发标签的拖拽
-    removeBtn.addEventListener('mousedown', (e) => {
-      e.stopPropagation();
-    });
-
-    removeBtn.addEventListener("click", (e) => {
-      e.stopPropagation(); // 阻止事件冒泡
-      e.preventDefault();  // 阻止默认行为
-
-      // 立即移除DOM元素
-      tagElement.remove();
-
-      // 更新状态
-      if (type === 'include') {
-        this.removeIncludeTag(state, tagId);
-      } else {
-        this.removeExcludeTag(state, tagId);
-      }
-      refresh();
-    });
-
-    tagElement.appendChild(removeBtn);
     return tagElement;
   }
 
@@ -273,36 +231,36 @@ export class FilterManager {
     state: StatsState,
     refresh: RefreshFn
   ): HTMLElement {
-    const categoryElement = document.createElement("span");
-    categoryElement.className = `filter-tag filter-tag-category filter-tag-${type}`;
-    categoryElement.textContent = `${categoryName} (${tagIds.length} OR)`;
-    categoryElement.draggable = true;
-    categoryElement.style.cursor = "grab";
-
-    categoryElement.addEventListener("dragstart", (e) => {
-      setDragContext({
+    const categoryElement = createFilterChip({
+      label: `${categoryName} (${tagIds.length} OR)`,
+      variant: type,
+      className: `filter-tag filter-tag-category filter-tag-${type}`,
+      createDragContext: () => ({
         categoryId,
         categoryName,
         categoryTagIds: [...tagIds],
         dropped: false,
         isFilterTag: true,
         isCategory: true
-      });
-
-      const ghost = e.target as HTMLElement;
-      ghost.style.opacity = "0.5";
-
-      if (e.dataTransfer) {
-        e.dataTransfer.effectAllowed = "move";
-        e.dataTransfer.setData("text/plain", categoryName);
-      }
-    });
-
-    categoryElement.addEventListener("dragend", (e) => {
-      const context = getDragContext();
-      if (context && !context.dropped && context.isFilterTag && context.isCategory) {
-        categoryElement.remove();
-
+      }),
+      onDragStart: (_, element) => {
+        element.style.opacity = "0.5";
+      },
+      onDragEnd: (_, element) => {
+        const context = getDragContext();
+        if (context && !context.dropped && context.isFilterTag && context.isCategory) {
+          element.remove();
+          if (type === 'include') {
+            this.removeIncludeCategory(state, categoryId);
+          } else {
+            this.removeExcludeCategory(state, categoryId);
+          }
+          refresh();
+        }
+        element.style.opacity = "1";
+      },
+      onRemove: (_, element) => {
+        element.remove();
         if (type === 'include') {
           this.removeIncludeCategory(state, categoryId);
         } else {
@@ -310,30 +268,7 @@ export class FilterManager {
         }
         refresh();
       }
-
-      (e.target as HTMLElement).style.opacity = "1";
     });
-
-    const removeBtn = document.createElement("button");
-    removeBtn.className = "filter-tag-remove";
-    removeBtn.textContent = "×";
-    removeBtn.addEventListener("mousedown", (e) => {
-      e.stopPropagation();
-    });
-    removeBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      e.preventDefault();
-
-      categoryElement.remove();
-      if (type === 'include') {
-        this.removeIncludeCategory(state, categoryId);
-      } else {
-        this.removeExcludeCategory(state, categoryId);
-      }
-      refresh();
-    });
-
-    categoryElement.appendChild(removeBtn);
     return categoryElement;
   }
 
@@ -381,64 +316,38 @@ export class FilterManager {
     refresh: RefreshFn,
     type: 'include' | 'exclude'
   ): void {
-    // 阻止默认行为，允许放置
-    zone.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      if (e.dataTransfer) {
-        e.dataTransfer.dropEffect = 'copy';
-      }
-      zone.classList.add('drag-over');
-    });
-
-    // 拖拽离开时移除样式
-    zone.addEventListener('dragleave', (e) => {
-      if (!zone.contains(e.relatedTarget as Node)) {
-        zone.classList.remove('drag-over');
-      }
-    });
-
-    // 处理放置事件
-    zone.addEventListener('drop', (e) => {
-      e.preventDefault();
-      zone.classList.remove('drag-over');
-
-      const context = getDragContext();
-      if (!context) {
-        return;
-      }
-
-      // 如果是过滤区标签被拖拽，则不执行添加操作
-      if (context.isFilterTag) {
-        // 标记已放置，防止触发删除
-        context.dropped = true;
-        setDragContext(context);
-        return;
-      }
-
-      if (context.isCategory && context.categoryId && context.categoryTagIds) {
-        if (type === 'include') {
-          this.addIncludeCategory(state, context.categoryId, context.categoryTagIds);
-        } else {
-          this.addExcludeCategory(state, context.categoryId, context.categoryTagIds);
-        }
-      } else {
-        if (!context.tagId) {
+    bindDropZone({
+      zone,
+      dropEffect: "copy",
+      onDrop: (context) => {
+        if (context.isFilterTag) {
+          context.dropped = true;
+          setDragContext(context);
           return;
         }
 
-        if (type === 'include') {
-          this.addIncludeTag(state, context.tagId);
+        if (context.isCategory && context.categoryId && context.categoryTagIds) {
+          if (type === 'include') {
+            this.addIncludeCategory(state, context.categoryId, context.categoryTagIds);
+          } else {
+            this.addExcludeCategory(state, context.categoryId, context.categoryTagIds);
+          }
         } else {
-          this.addExcludeTag(state, context.tagId);
+          if (!context.tagId) {
+            return;
+          }
+
+          if (type === 'include') {
+            this.addIncludeTag(state, context.tagId);
+          } else {
+            this.addExcludeTag(state, context.tagId);
+          }
         }
+
+        context.dropped = true;
+        setDragContext(context);
+        refresh();
       }
-
-      // 标记已放置
-      context.dropped = true;
-      setDragContext(context);
-
-      // 刷新显示
-      refresh();
     });
   }
 }

@@ -3,6 +3,7 @@ import { themeManager } from "./theme-manager.js";
 export type ThemePageId =
   | "popup"
   | "options"
+  | "favorites"
   | "stats"
   | "theme-settings"
   | "theme-example";

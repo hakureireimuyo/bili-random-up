@@ -11,7 +11,9 @@
 - 持久化数据类型与数据库交互统一走 `database`
 
 子目录说明：
+- `favorites`：收藏夹视频浏览与标签筛选页
 - `options`：扩展设置页
 - `popup`：浏览器工具栏弹出页
+- `shared`：跨页面复用的 UI 基础组件与绑定工具
 - `stats`：UP 分类与标签管理页
 - `watch-stats`：观看统计展示页
